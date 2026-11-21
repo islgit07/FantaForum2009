@@ -505,7 +505,15 @@ $('#export').onclick=async()=>{
  button.disabled=true;setStatus('正在生成 PNG…');
  try{
   await Promise.all([logoReady,buildingReady]);
-  if(typeof html2canvas!=='function')throw Error('导出组件未加载，请刷新页面后再试。');
+  if(typeof html2canvas!=='function'){
+   /* html2canvas 兜底：加载失败时动态重载一次（站点绝对路径 → 工具相对路径），仍失败才报错 */
+   const cands=location.protocol==='file:'?['./assets/card-capture.js']:['/tools/card/assets/card-capture.js','./assets/card-capture.js'];
+   for(const u of cands){
+    if(typeof html2canvas==='function')break;
+    await new Promise(res=>{const s=document.createElement('script');let done=false;const fin=()=>{if(!done){done=true;res();}};s.src=u+(u.indexOf('?')<0?'?':'&')+'retry='+Date.now();s.onload=fin;s.onerror=fin;setTimeout(fin,15000);document.head.appendChild(s);});
+   }
+   if(typeof html2canvas!=='function')throw Error('导出组件加载失败（多半是网络波动），请稍后刷新页面后再试。');
+  }
   await document.fonts.ready;
   // Keep local image decoding origin-clean for the screenshot.
   document.querySelector('.building-decoration').src=buildingImage.src;

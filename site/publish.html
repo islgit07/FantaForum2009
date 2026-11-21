@@ -211,11 +211,22 @@ $('#frame').onpointermove=e=>{if(!drag||e.pointerId!==drag.id)return;x=Math.max(
 $('#frame').onpointerup=$('#frame').onpointercancel=$('#frame').onlostpointercapture=()=>drag=null;
 const previous=new WeakMap();
 document.querySelectorAll('[data-field]').forEach(field=>{previous.set(field,'');function adjust(){const multi=field.tagName==='TEXTAREA';for(let size=field.id==='name'?39:multi?23:field.id==='author'?18:field.id==='owner'?17:25;size>=14;size--){field.style.fontSize=size+'px';if(field.scrollWidth<=field.clientWidth+1&&(!multi||field.scrollHeight<=field.clientHeight+1)){previous.set(field,field.value);return;}}field.value=previous.get(field);status.textContent='这个框已满，请精简文字。';}field.oninput=e=>{if(!e.isComposing)adjust();};field.oncompositionend=adjust;});
+/* html2canvas 兜底：个别访客网络环境下 198KB 的 capture.js 可能加载失败，
+ * 导出前检测一次并动态重载（候选：站点绝对路径 → 工具相对路径）；仍失败则给出可读提示。 */
+async function ensureHtml2Canvas(){
+if(typeof html2canvas==='function')return;
+const cands=location.protocol==='file:'?['assets/capture.js']:['/tools/guaitan/assets/capture.js','assets/capture.js'];
+for(const u of cands){
+if(typeof html2canvas==='function')return;
+await new Promise(res=>{const s=document.createElement('script');let done=false;const fin=()=>{if(!done){done=true;res();}};s.src=u+(u.indexOf('?')<0?'?':'&')+'retry='+Date.now();s.onload=fin;s.onerror=fin;setTimeout(fin,15000);document.head.appendChild(s);});
+}
+if(typeof html2canvas!=='function')throw Error('卡面渲染组件加载失败（多半是网络波动），请稍后刷新页面重试。');
+}
 $('#export').onclick=async()=>{
 if(imageLoading){status.textContent='图片读取中，请稍等。';return;}
 for(const id of ['name','area'])if(!$('#'+id).value.trim()){$('#'+id).reportValidity();$('#'+id).focus();status.textContent='请填写怪谈名称称和影响面积（含单位）。';return;}
 const button=$('#export');button.disabled=true;status.textContent='正在导出…';
-try{await document.fonts.ready;await unrecordedReady;const exportWidth=card.offsetWidth,exportHeight=card.offsetHeight;const canvas=await html2canvas(card,{scale:2,width:exportWidth,height:exportHeight,logging:false,onclone:doc=>{
+try{await ensureHtml2Canvas();await document.fonts.ready;await unrecordedReady;const exportWidth=card.offsetWidth,exportHeight=card.offsetHeight;const canvas=await html2canvas(card,{scale:2,width:exportWidth,height:exportHeight,logging:false,onclone:doc=>{
 doc.querySelector('#card').style.transform='none';doc.querySelector('.viewport').style.width=exportWidth+'px';doc.querySelector('.viewport').style.height=exportHeight+'px';
 doc.querySelector('#upload').hidden=true;
 doc.querySelector('#name').style.border='none';

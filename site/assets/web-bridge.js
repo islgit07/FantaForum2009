@@ -65,6 +65,8 @@
     });
   }
   async function shoot(el, width, height, onclone) {
+    /* html2canvas 兜底：工具页自带 ensureHtml2Canvas（动态重载 capture 脚本），优先走它 */
+    if (typeof window.html2canvas !== 'function' && typeof ensureHtml2Canvas === 'function') await ensureHtml2Canvas();
     if (typeof window.html2canvas !== 'function') throw new Error('卡面渲染组件未就绪，请刷新重试。');
     await document.fonts.ready;
     const canvas = await html2canvas(el, { scale: 2, width, height, logging: false, backgroundColor: null, onclone });
