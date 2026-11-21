@@ -1,0 +1,32 @@
+# 服务器数据镜像（db.json + files/ 图片，含用户资料与聊天记录）—— 绝不入库
+data/
+
+# 本地备份目录（每次改动前的人工备份）
+_before_*/
+_before-*/
+_deploy_stage/
+_stock_work/
+__pycache__/
+
+# 日志
+*.log
+
+# 一次性运维脚本（含服务器凭据，不入库）
+add_admin_role.py
+apply_nicknames.py
+compress_stock_prepare.py
+compress_stock_apply.py
+compress_stock_run.py
+fix_thread_author.py
+optimize_assets.py
+parse_renamed_cards.py
+
+# 根目录重复音频（真正被引用的是 site/assets/music/music-2.mp3，md5 相同）
+欢迎注册怪谈论坛！.mp3
+
+# 系统文件
+node_modules/
+.DS_Store
+Thumbs.db
+*.tmp_last_backup.txt
+srv_md5.txt

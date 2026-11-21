@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 用户主页</title>
+<link rel="stylesheet" href="/assets/forum.css">
+<style>
+/* 「???」档案页的血红问号 */
+.q-veil { position: fixed; inset: 0; background: #000; z-index: 500; display: none; align-items: center; justify-content: center; }
+.q-veil.show { display: flex; }
+.q-mark { font-family: SimSun, "Songti SC", serif; font-size: min(52vh, 52vw); font-weight: bold; color: #ed3828; text-shadow: 0 0 46px #ed382866, 0 0 8px #ed3828aa; line-height: 1; animation: q-flicker 2.2s steps(1) infinite; }
+@keyframes q-flicker { 0%, 86% { opacity: 1; } 87% { opacity: .22; } 91% { opacity: 1; } 94% { opacity: .5; } 100% { opacity: 1; } }
+
+/* 坛主个人主页：千禧年特效 */
+.tz-marquee { overflow: hidden; border: 1px dashed #7a5c22; background: #0d0b06; color: #ffd76e; font: 13px var(--mono), monospace; letter-spacing: 1px; padding: 7px 0; margin-bottom: 14px; white-space: nowrap; }
+.tz-marquee span { display: inline-block; padding-left: 100%; animation: tz-marquee 15s linear infinite; }
+@keyframes tz-marquee { to { transform: translateX(-100%); } }
+.tz-card-line { margin: 0; padding: 28px 10px; text-align: center; color: #ffd76e; font-size: 16px; letter-spacing: 2px; background: #0d0b06; }
+.tz-star { position: fixed; z-index: 320; pointer-events: none; font-size: 13px; animation: tz-star .7s ease-out forwards; }
+@keyframes tz-star { to { transform: translateY(14px) scale(.2) rotate(40deg); opacity: 0; } }
+
+/* 坛主主页：千禧年漂浮弹窗（可叉掉，仅电脑端） */
+.tz-pop { position: fixed; z-index: 310; width: 250px; }
+.tz-pop .win-body { font-size: 12px; color: #c9bfc0; padding: 10px 12px; line-height: 1.7; }
+.tz-pop .corner { cursor: pointer; }
+@media (max-width: 640px) { .tz-pop { width: 200px; } .tz-pop .win-body { font-size: 11px; padding: 8px 10px; } }
+@media (max-width: 640px) { .tz-marquee span { font-size: 12px; } .tz-card-line { font-size: 14px; padding: 20px 8px; } }
+
+/* ASCII 框线简介：窄屏横向滑动（桌面同样生效，保证对齐） */
+.pf-ascii .pf-text { overflow-x: auto; white-space: pre; font-family: "Courier New", var(--mono), monospace; font-size: 13px; line-height: 1.6; padding-bottom: 6px; scrollbar-width: thin; scrollbar-color: #3a4552 #10131b; }
+.pf-ascii .pf-text::-webkit-scrollbar { height: 6px; }
+.pf-ascii .pf-text::-webkit-scrollbar-track { background: #10131b; }
+.pf-ascii .pf-text::-webkit-scrollbar-thumb { background: #3a4552; border-radius: 3px; }
+
+/* 系统自动评论：五彩变色 */
+.rb-auto { font-weight: bold; animation: rb-cycle 2.4s linear infinite; }
+@keyframes rb-cycle {
+  0% { color: #ff4d4d; } 16% { color: #ffb84d; } 33% { color: #ffe14d; } 50% { color: #6bff6b; }
+  66% { color: #4dd2ff; } 83% { color: #b84dff; } 100% { color: #ff4d4d; }
+}
+@media (max-width: 640px) { .rb-auto { font-size: 13px; } }
+
+/* 踩一踩 / IE 进度条 / 戳头像 */
+.tz-stomp { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; padding: 10px 14px; border: 1px dashed #7a5c22; background: #0d0b06; }
+.tz-stomp-count { color: #c9bfc0; font: 13px var(--mono), monospace; }
+.tz-stomp-say { color: #ffd76e; font-size: 14px; }
+.tz-iebar { position: fixed; top: 0; left: 0; right: 0; z-index: 330; background: #10131b; border-bottom: 1px solid #3a4552; padding: 8px 12px; }
+.tz-iebar-inner { display: flex; align-items: center; gap: 10px; }
+.tz-iebar .tz-ie-pct { color: #9bd9ff; font: bold 13px "Courier New", monospace; min-width: 40px; }
+.tz-ie-track { flex: 1; height: 14px; background: #0b0d10; border: 1px solid #3a4552; }
+.tz-ie-fill { height: 100%; width: 0; background: linear-gradient(#7bb7e8, #2f6fa8); transition: width .12s; }
+.tz-ie-tip { color: #8b9298; font: 11px var(--mono), monospace; }
+.ps-identity { position: relative; }
+.ps-avatar { cursor: pointer; }
+.ps-avatar.tz-shake { animation: tz-shake .4s linear; }
+@keyframes tz-shake { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-3px,1px) rotate(-2deg); } 50% { transform: translate(3px,-1px) rotate(2deg); } 75% { transform: translate(-2px,-2px) rotate(-1deg); } }
+.tz-bubble { position: fixed; z-index: 340; background: #fff; color: #1a1a1a; font-size: 13px; padding: 7px 12px; border-radius: 10px; box-shadow: 0 3px 12px #0008; pointer-events: none; }
+.tz-bubble::after { content: ""; position: absolute; top: -6px; left: 22px; border: 6px solid transparent; border-bottom-color: #fff; border-top: none; }
+@media (max-width: 640px) { .pf-ascii .pf-text { font-size: 12px; } }
+
+/* 管理员禁言栏 + 被禁言用户灰色滤镜 */
+.tz-adminbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; padding: 10px 14px; border: 1px solid #4d6b8a; background: #0d1420; }
+.tz-adminbar-t { color: #9bd9ff; font: 13px var(--mono), monospace; }
+body.muted-view .layout.single { filter: grayscale(1) contrast(.92); }
+</style>
+</head>
+<body data-section="me" data-section-name="用户主页">
+<header id="site-header"></header>
+
+<div class="layout single">
+  <main>
+    <div class="toolbar-strip">
+      <a class="btn" href="javascript:history.back()">返回</a>
+      <span class="spacer" id="bar-name">怪啖论坛 » 用户主页</span>
+      <a class="btn" href="index.html">公共聊天室</a>
+    </div>
+    <p class="status" id="status" role="status"></p>
+    <div id="sheet-box"></div>
+    <details class="origin-card" id="origin-card" hidden>
+      <summary>查看人设卡</summary>
+      <div class="origin-inner"><img id="origin-img" alt="人设卡"></div>
+    </details>
+    <section class="win" id="guestbook-win" style="margin-top:18px">
+      <div class="win-bar"><span class="bar-title">访客留言 <small>GUESTBOOK</small></span><span class="bar-sub" id="gb-cnt"></span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body">
+        <div id="gb-form-box"></div>
+        <div id="gb-list"><p class="hint">加载中…</p></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="q-veil" id="q-veil"><span class="q-mark">?</span></div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const uid = new URLSearchParams(location.search).get('id') || '';
+
+const field = (label, val) =>
+  '<div class="pf-row"><span class="pf-label">' + FF.esc(label) + '</span>' +
+  '<div class="pf-val">' + (val ? FF.esc(val) : '<span class="pf-empty">（未填写）</span>') + '</div></div>';
+const multi = (label, val) =>
+  '<div class="pf-block"><h3>' + FF.esc(label) + '</h3><div class="pf-text">' +
+  (val ? FF.esc(val).replace(/\n/g, '<br>') : '<span class="pf-empty">（未填写）</span>') + '</div></div>';
+
+function renderSheet(u) {
+  const p = u.public || {};
+  $('bar-name').textContent = '怪啖论坛 » ' + u.nickname + ' 的主页';
+  document.title = u.nickname + ' · 怪啖论坛';
+  document.body.classList.toggle('muted-view', !!u.muted);
+  $('sheet-box').innerHTML =
+    '<div class="psheet forum">' +
+      '<div class="ps-top"><span>个人主页 / PROFILE</span><span class="ps-tag">公开档案</span></div>' +
+      '<div class="ps-body">' +
+        '<div class="ps-identity">' +
+          '<img class="ps-avatar" src="' + FF.esc(u.avatar || '') + '" alt="头像">' +
+          '<div><h1>' + FF.esc(u.nickname) + (u.muted ? ' <span class="mute-tag">已禁言</span>' : '') + '</h1>' +
+          '<div class="kicker cool">PLAYER / ' + FF.esc(u.playerName || '（匿名）') + '</div></div>' +
+        '</div>' +
+        '<div class="ps-cols">' +
+          '<section class="ps-win"><div class="ps-win-bar">公开资料 <small>PUBLIC PROFILE</small></div><div class="ps-win-body">' +
+            field('性别', p.gender || '保密') + field('年龄', p.age) + multi('个性签名', p.signature) + multi('个人简介', p.intro) +
+          '</div></section>' +
+        '</div>' +
+        (u.portrait ? '<section class="ps-win"><div class="ps-win-bar">个人形象 <small>PORTRAIT</small></div><div class="ps-win-body ps-portrait"><img loading="lazy" decoding="async" src="' + FF.esc(u.portrait) + '" alt="立绘"></div></section>' : '') +
+      '</div>' +
+    '</div>';
+  /* ASCII 框线简介：等宽字体 + 横向滑动，窄屏不再切边错位（仅框线字符内含时启用，散文简介不受影响） */
+  [...document.querySelectorAll('.pf-block')].forEach(b => {
+    const t = (b.querySelector('.pf-text') || {}).textContent || '';
+    if (/个人简介/.test((b.querySelector('h3') || {}).textContent || '') && /[─│┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬┏┓┗┛]/.test(t)) b.classList.add('pf-ascii');
+  });
+  const origin = $('origin-card');
+  if (u.card) { $('origin-img').src = u.card; origin.hidden = false; }
+  else origin.hidden = true;
+}
+
+let me = null;
+
+function renderGbForm() {
+  const box = $('gb-form-box');
+  if (!me || !me.user) {
+    box.innerHTML = '<p class="hint">登入账号后即可在此留言。</p>';
+    return;
+  }
+  box.innerHTML =
+    '<div class="gb-form">' +
+      '<textarea id="gb-input" class="field" rows="3" maxlength="1000" placeholder="留下你想说的话……"></textarea>' +
+      '<div class="gb-form-bar"><span class="hint">以「' + FF.esc(me.user.nickname) + '」的身份留言</span>' +
+      '<button class="btn primary" type="button" id="gb-send">发表留言</button></div>' +
+    '</div>';
+  $('gb-send').onclick = async () => {
+    const input = $('gb-input');
+    const body = input.value.trim();
+    if (!body) { $('status').textContent = '留言内容不能为空。'; return; }
+    const btn = $('gb-send');
+    btn.disabled = true;
+    try {
+      await FF.api('/api/guestbook/' + encodeURIComponent(uid), { body: { body } });
+      input.value = '';
+      $('status').textContent = '留言已发表。';
+      await loadGuestbook();
+    } catch (err) { $('status').textContent = err.message; }
+    finally { btn.disabled = false; }
+  };
+}
+
+function renderGbList(list) {
+  $('gb-cnt').textContent = list.length + ' 条';
+  const box = $('gb-list');
+  if (!list.length) { box.innerHTML = '<p class="hint">还没有留言，来留下第一条吧。</p>'; return; }
+  box.innerHTML = list.map(g => {
+    const avatar = g.avatar
+      ? '<img class="gb-avatar" loading="lazy" decoding="async" src="' + FF.esc(g.avatar) + '" alt="">'
+      : '<span class="gb-avatar gb-avatar-ph">' + FF.esc((g.author || '?').slice(0, 1)) + '</span>';
+    const del = g.canDelete
+      ? '<button class="btn ghost gb-del" type="button" data-id="' + FF.esc(g.id) + '">删除</button>'
+      : '';
+    /* 系统自动评论：中括号内五彩变色（已删除的走正常删除痕迹显示） */
+    const bodyHtml = (g.auto && !g.deleted)
+      ? FF.esc(g.body.replace(/【[^】]*】\s*$/, '')) + '<span class="rb-auto">【系统自动评论】</span>'
+      : FF.esc(g.body).replace(/\n/g, '<br>');
+    const who = g.authorId
+      ? '<a class="gb-author" href="profile.html?id=' + FF.esc(g.authorId) + '">' + FF.esc(g.author) + '</a>'
+      : '<span class="gb-author">' + FF.esc(g.author || '匿名') + '</span>';
+    return '<div class="gb-item' + (g.deleted ? ' gb-deleted' : '') + '">' +
+      '<div class="gb-head">' + avatar +
+        '<div class="gb-meta">' + who + '<span class="time">' + FF.fmtTime(g.createdAt) + '</span></div>' + del +
+      '</div>' +
+      '<div class="gb-body">' + bodyHtml + '</div>' +
+    '</div>';
+  }).join('');
+  box.querySelectorAll('.gb-del').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('确定删除这条留言？')) return;
+      try {
+        await FF.api('/api/guestbook/' + encodeURIComponent(btn.dataset.id) + '/delete', { method: 'POST', body: {} });
+        $('status').textContent = '留言已删除。';
+        await loadGuestbook();
+      } catch (err) { $('status').textContent = err.message; }
+    };
+  });
+}
+
+async function loadGuestbook() {
+  try {
+    const list = await FF.api('/api/guestbook/' + encodeURIComponent(uid));
+    renderGbList(list);
+  } catch (err) {
+    $('gb-list').innerHTML = '<p class="status">' + FF.esc(err.message) + '</p>';
+  }
+}
+
+(async () => {
+  await FF.renderHeader();
+  if (!uid) { $('status').textContent = '缺少用户参数。'; return; }
+  try {
+    me = await FF.session();
+    const u = await FF.api('/api/users/' + encodeURIComponent(uid) + '/public');
+    renderSheet(u);
+    /* 「???」的档案页是陷阱：没有人设卡和评论区，点「查看人设卡」会看到它 */
+    if (u.nickname === '???') {
+      $('guestbook-win').hidden = true;
+      const origin = $('origin-card');
+      origin.hidden = false;
+      origin.addEventListener('click', e => {
+        e.preventDefault();
+        origin.open = false;
+        mysteryEyes();
+      });
+      return;
+    }
+    /* 「坛主」的档案页：千禧年特效——跑马灯 + 星星拖尾；人设卡点开只有一句话 */
+    if (u.id === 'mwowhihsc56eb23a') {
+      document.body.classList.add('tz-y2k');
+      const origin = $('origin-card');
+      origin.hidden = false;
+      origin.querySelector('.origin-inner').innerHTML = '<p class="tz-card-line">管理员本员呵呵哒^_^</p>';
+      const mq = document.createElement('div');
+      mq.className = 'tz-marquee';
+      mq.innerHTML = '<span>★☆★ 欢迎光临 坛主的个人主页 ★☆★ 本站最佳浏览分辨率 800×600 ★☆★ 推荐使用 IE6.0 或 Netscape 4.7 浏览 ★☆★ 千禧纪元 · 2009 ★☆★</span>';
+      $('sheet-box').insertAdjacentElement('beforebegin', mq);
+      /* 漂浮弹窗：全端生成（手机为小尺寸版），可以叉掉 */
+      setTimeout(() => spawnTzPop('系统提示', '恭喜您！您是本站第 <b style="color:#ed3828">444444</b> 位访客，已获得称号：盯梢者。'), 1600);
+      setTimeout(() => spawnTzPop('限时广告', '问靈社 · 怀叶路404号：怪物维修、秘物维护、婚恋介绍——全部业务 8.8 折！'), 3000);
+      setTimeout(() => spawnTzPop('警告', '检测到您已停留 3 分 33 秒。它数着呢。'), 4500);
+      /* 登入访客自动留言：每人每天一次（跨天再访问会再发；服务端按日期查重），坛主本人由服务端拦截 */
+      if (me && me.user && me.user.id !== 'mwowhihsc56eb23a') {
+        const d = new Date();
+        const dayKey = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+        const key = 'ff_tz_auto_' + me.user.id + '_' + dayKey;
+        if (!localStorage.getItem(key)) {
+          localStorage.setItem(key, '1');
+          FF.api('/api/guestbook/' + encodeURIComponent(uid) + '/auto', { method: 'POST', body: {} })
+            .then(() => loadGuestbook())
+            .catch(() => localStorage.removeItem(key));
+        }
+      }
+      /* ① 踩一踩计数器 */
+      const stomp = document.createElement('div');
+      stomp.className = 'tz-stomp';
+      stomp.innerHTML = '<button type="button" class="btn ghost" id="tz-stomp-btn">踩一踩</button>' +
+        '<span class="tz-stomp-count" id="tz-stomp-count">已被踩 0 脚</span>' +
+        '<span class="tz-stomp-say" id="tz-stomp-say"></span>';
+      mq.insertAdjacentElement('afterend', stomp);
+      let stomps = 0;
+      const stompSay = ['哎哟', '又踩！', '你还真踩啊', '…行，踩吧，反正我是管理员'];
+      document.getElementById('tz-stomp-btn').onclick = () => {
+        stomps++;
+        document.getElementById('tz-stomp-count').textContent = '已被踩 ' + stomps + ' 脚';
+        document.getElementById('tz-stomp-say').textContent = stompSay[Math.min(stomps - 1, stompSay.length - 1)];
+      };
+      /* ② IE 进度条：99% 卡住 */
+      const iebar = document.createElement('div');
+      iebar.className = 'tz-iebar';
+      iebar.innerHTML = '<span class="tz-ie-pct">0%</span><div class="tz-ie-track"><div class="tz-ie-fill"></div></div><span class="tz-ie-tip">正在打开坛主的个人主页…请勿关闭窗口</span>';
+      document.body.appendChild(iebar);
+      let pct = 0;
+      const ieFill = iebar.querySelector('.tz-ie-fill');
+      const iePct = iebar.querySelector('.tz-ie-pct');
+      const ieIv = setInterval(() => {
+        pct = Math.min(99, pct + 3 + Math.floor(Math.random() * 9));
+        ieFill.style.width = pct + '%';
+        iePct.textContent = pct + '%';
+        if (pct >= 99) {
+          clearInterval(ieIv);
+          iePct.textContent = '99%（卡住了）';
+          setTimeout(() => iebar.remove(), 1500);
+        }
+      }, 90);
+      /* ③ 戳头像：坏掉的钟也需要表情 */
+      const av = document.querySelector('.ps-avatar');
+      if (av) {
+        av.style.cursor = 'pointer';
+        let tzPokes = 0, tzBubble = null, tzBubbleTimer = null;
+        const tzLines = ['呜', '别戳了', '再戳我真的哭了:-(', '管理员本员呵呵哒^_^'];
+        av.onclick = () => {
+          tzPokes++;
+          av.classList.remove('tz-shake');
+          void av.offsetWidth;
+          av.classList.add('tz-shake');
+          if (tzBubble) tzBubble.remove();
+          clearTimeout(tzBubbleTimer);
+          tzBubble = document.createElement('div');
+          tzBubble.className = 'tz-bubble';
+          tzBubble.textContent = tzLines[Math.min(tzPokes - 1, tzLines.length - 1)];
+          const r = av.getBoundingClientRect();
+          tzBubble.style.left = Math.min(innerWidth - 160, Math.max(8, r.left + 56)) + 'px';
+          tzBubble.style.top = (r.bottom + 8) + 'px';
+          document.body.appendChild(tzBubble);
+          tzBubbleTimer = setTimeout(() => { if (tzBubble) { tzBubble.remove(); tzBubble = null; } }, 1300);
+        };
+      }
+    }
+    /* 管理员组：在其他用户档案页可直接禁言/解除（??? 陷阱页除外） */
+    if (me && me.adminByRole && me.user && me.user.id !== u.id) {
+      const mutedNow = !!u.muted;
+      const bar = document.createElement('div');
+      bar.className = 'tz-adminbar';
+      bar.innerHTML = '<span class="tz-adminbar-t">管理：</span>' + (mutedNow
+        ? '<button class="btn ghost" type="button" id="tz-unmute">解除禁言</button><span class="hint">禁言至 ' + new Date(u.mutedUntil).toLocaleDateString() + '</span>'
+        : '<button class="btn ghost" type="button" data-days="1">禁言1天</button><button class="btn ghost" type="button" data-days="2">禁言2天</button><button class="btn ghost" type="button" data-days="3">禁言3天</button>');
+      $('sheet-box').insertAdjacentElement('afterend', bar);
+      bar.querySelectorAll('[data-days]').forEach(b => b.onclick = async () => {
+        try { await FF.api('/api/users/' + encodeURIComponent(uid) + '/mute', { method: 'POST', body: { days: Number(b.dataset.days) } }); location.reload(); }
+        catch (err) { $('status').textContent = err.message; }
+      });
+      const um = bar.querySelector('#tz-unmute');
+      if (um) um.onclick = async () => {
+        try { await FF.api('/api/users/' + encodeURIComponent(uid) + '/unmute', { method: 'POST', body: {} }); location.reload(); }
+        catch (err) { $('status').textContent = err.message; }
+      };
+    }
+    renderGbForm();
+    await loadGuestbook();
+    FF.sse({ guestbook: loadGuestbook, guestbookDelete: loadGuestbook });
+  } catch (err) {
+    $('status').textContent = err.message;
+  }
+})();
+
+/* 血红问号挂 4 秒，然后强行关页 / 返回上一级 */
+function mysteryEyes() {
+  const veil = $('q-veil');
+  veil.classList.add('show');
+  setTimeout(() => {
+    veil.classList.remove('show');
+    window.close();
+    setTimeout(() => {
+      if (!window.closed) history.back();
+      setTimeout(() => { if (!window.closed && location.pathname.endsWith('profile.html')) location.href = 'home.html'; }, 120);
+    }, 80);
+  }, 4000);
+}
+
+/* 千禧年星星拖尾（坛主主页：鼠标划过 / 手指划过都撒星星） */
+let tzLastStar = 0;
+const tzStarColors = ['#ffd76e', '#7cc7ff', '#ff6b81', '#9bffb0'];
+function tzSpawnStar(x, y) {
+  if (!document.body.classList.contains('tz-y2k')) return;
+  const now = Date.now();
+  if (now - tzLastStar < 40) return;
+  tzLastStar = now;
+  const s = document.createElement('span');
+  s.className = 'tz-star';
+  s.textContent = ['★', '✦', '✧'][Math.floor(Math.random() * 3)];
+  s.style.left = (x - 4) + 'px';
+  s.style.top = (y - 4) + 'px';
+  s.style.color = tzStarColors[Math.floor(Math.random() * tzStarColors.length)];
+  document.body.appendChild(s);
+  setTimeout(() => s.remove(), 750);
+}
+window.addEventListener('mousemove', e => tzSpawnStar(e.clientX, e.clientY));
+window.addEventListener('touchmove', e => { const t = e.touches && e.touches[0]; if (t) tzSpawnStar(t.clientX, t.clientY); }, { passive: true });
+
+/* 漂浮弹窗：随机漂移 + 边缘反弹，叉一个少一个 */
+const tzPops = [];
+function spawnTzPop(title, body) {
+  const el = document.createElement('div');
+  el.className = 'win tz-pop';
+  const pad = 16;
+  const maxX = Math.max(pad + 20, innerWidth - 266 - pad);
+  const maxY = Math.max(pad + 20, innerHeight - 150 - pad);
+  const x = pad + Math.random() * (maxX - pad);
+  const y = pad + Math.random() * (maxY - pad);
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.innerHTML = '<div class="win-bar"><span class="bar-title">' + title + '</span><button class="corner" type="button" aria-label="关闭">×</button></div><div class="win-body">' + body + '</div>';
+  document.body.appendChild(el);
+  const box = { el, x, y,
+    vx: (Math.random() < .5 ? -1 : 1) * (0.35 + Math.random() * 0.35),
+    vy: (Math.random() < .5 ? -1 : 1) * (0.3 + Math.random() * 0.3) };
+  tzPops.push(box);
+  el.querySelector('.corner').onclick = () => {
+    el.remove();
+    const i = tzPops.indexOf(box);
+    if (i >= 0) tzPops.splice(i, 1);
+  };
+  if (tzPops.length === 1) tzDrift();
+}
+function tzDrift() {
+  requestAnimationFrame(() => {
+    if (!tzPops.length) return;
+    for (const b of tzPops) {
+      if (!b.el.isConnected) continue;
+      const w = b.el.offsetWidth, h = b.el.offsetHeight;
+      b.x += b.vx; b.y += b.vy;
+      if (b.x < 6) { b.x = 6; b.vx = Math.abs(b.vx); }
+      if (b.x + w > innerWidth - 6) { b.x = innerWidth - 6 - w; b.vx = -Math.abs(b.vx); }
+      if (b.y < 6) { b.y = 6; b.vy = Math.abs(b.vy); }
+      if (b.y + h > innerHeight - 6) { b.y = innerHeight - 6 - h; b.vy = -Math.abs(b.vy); }
+      b.el.style.left = b.x + 'px';
+      b.el.style.top = b.y + 'px';
+    }
+    tzDrift();
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 消息</title>
+<link rel="stylesheet" href="/assets/forum.css">
+</head>
+<body data-section="messages" data-section-name="消息">
+<header id="site-header"></header>
+
+<div class="layout single">
+  <main>
+    <h1 class="page-title">消息<span class="en">NOTIFICATIONS</span></h1>
+    <p class="hint">有人回复、点赞、在你的个人空间留言，或删除了你的内容时，会记录在这里。</p>
+    <section class="win">
+      <div class="win-bar"><span class="bar-title">与我相关</span><span class="bar-sub" id="cnt"></span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><div id="list"></div></div>
+    </section>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const LABEL = {
+  reply: '评论了你的帖子', like: '赞了你的帖子', pin: '置顶了你的帖子',
+  mention: '在评论中回复了你', likeReply: '赞了你的评论', pinReply: '置顶了你的评论',
+  deleteThread: '删除了你的帖子', deleteReply: '删除了你的评论',
+  guestbook: '在你的个人空间留言', guestbookDelete: '删除了你在个人空间的留言'
+};
+function text(n) {
+  const prefix = '<b>' + FF.esc(n.actorName || '某人') + '</b> ' + (LABEL[n.type] || '操作了你的内容');
+  let detail = FF.esc(n.threadTitle || '');
+  const floorBits = [];
+  if (n.floor) floorBits.push(n.floor + '楼');
+  if (n.mentionOf) floorBits.push('回复 @' + n.mentionOf.author + '(' + n.mentionOf.floor + '楼)');
+  if (floorBits.length) detail += '<div class="hint">' + FF.esc(floorBits.join(' · ')) + '</div>';
+  if (n.excerpt) detail += '<div class="hint">「' + FF.esc(n.excerpt) + '」</div>';
+  const link = n.threadId
+    ? '<a class="btn" style="margin-left:8px" href="thread.html?id=' + FF.esc(n.threadId) + '">查看</a>'
+    : (n.profileId ? '<a class="btn" style="margin-left:8px" href="profile.html?id=' + FF.esc(n.profileId) + '">查看空间</a>' : '');
+  return prefix + (n.by ? '（' + (n.by === 'admin' ? '管理员' : n.by === 'owner' ? '帖主' : '本人') + '）' : '') +
+    link + (detail ? '<div class="hint">' + detail + '</div>' : '');
+}
+async function load() {
+  try {
+    const list = await FF.api('/api/notifications');
+    document.getElementById('cnt').textContent = list.length + ' 条';
+    document.getElementById('list').innerHTML = list.length
+      ? list.map(n => '<div class="msg-row-item">' + text(n) + '<span class="time">' + FF.fmtTime(n.ts) + '</span></div>').join('')
+      : '<p class="hint">暂无消息。</p>';
+  } catch (err) {
+    if (/登入/.test(err.message)) document.getElementById('list').innerHTML = '<p class="hint">请先登入查看你的消息。</p>';
+    else document.getElementById('list').innerHTML = '<p class="status">' + FF.esc(err.message) + '</p>';
+  }
+}
+(async () => { await FF.renderHeader(); await load(); FF.sse({ notification: load }); })();
+</script>
+</body>
+</html>

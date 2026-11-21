@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 帖子</title>
+<link rel="stylesheet" href="/assets/forum.css">
+</head>
+<body data-section="thread" data-section-name="帖子">
+<header id="site-header"></header>
+
+<div class="layout single">
+  <main>
+    <div class="toolbar-strip">
+      <a class="btn" href="javascript:history.back()">返回</a>
+      <span class="spacer" id="chan-name">帖子详情</span>
+    </div>
+    <section class="win">
+      <div class="win-bar"><span class="bar-title" id="t-title">帖子</span><span class="bar-sub" id="t-meta"></span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body">
+        <div class="thread-body" id="t-body"></div>
+        <div class="thread-images" id="t-images"></div>
+        <!-- 发帖人信息 + 操作：正文下方、评论上方 -->
+        <div class="thread-meta" id="t-authorbar"></div>
+        <p class="status" id="t-status"></p>
+      </div>
+    </section>
+    <section class="win" style="margin-top:16px">
+      <div class="win-bar"><span class="bar-title">评论</span><span class="bar-sub" id="reply-count"></span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body">
+        <div id="lock-seal" hidden></div>
+        <div id="replies"></div>
+        <div class="reply-target" id="reply-target" hidden></div>
+        <form id="reply-form" style="margin-top:14px">
+          <textarea class="field" id="reply-text" rows="3" maxlength="2000" placeholder="写下你的评论…"></textarea>
+          <div style="margin-top:8px"><button class="btn primary" type="submit">发送评论</button></div>
+        </form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const tid = new URLSearchParams(location.search).get('id') || '';
+/* 坛主专属：发帖/回复时名字旁带「管理员」徽标（admin 组其他账号没有） */
+const TANZHU_ID = 'mwowhihsc56eb23a';
+const adminBadge = id => id === TANZHU_ID ? '<span class="admin-tag">管理员</span>' : '';
+let me = null, cur = null, replyTarget = null;
+
+/* no = 匿名帖或 unknown 组角色（匿名/档案馆等）：主页不可点击；??? 例外（陷阱页） */
+function userAttr(authorId, no) {
+  return (authorId && authorId !== 'admin' && !no) ? ' data-user="' + FF.esc(authorId) + '"' : '';
+}
+function avatarHtml(author, avatar, authorId, cls, no) {
+  return avatar
+    ? '<img class="' + cls + '" src="' + FF.esc(avatar) + '" alt="头像"' + userAttr(authorId, no) + '>'
+    : '<span class="' + cls + ' avatar-ph"' + userAttr(authorId, no) + '>' + FF.esc(String(author || '?').slice(0, 1)) + '</span>';
+}
+
+function render(d) {
+  cur = d.thread;
+  const t = cur;
+  document.title = t.title + ' · 怪啖论坛';
+  $('chan-name').textContent = d.channel ? '频道：' + d.channel.name : '帖子详情';
+  $('t-title').textContent = t.title + (t.pinned ? ' 〔置顶〕' : '') + (t.locked ? ' 〔封锁〕' : '');
+  $('t-meta').textContent = (t.deleted ? '已删除' : FF.fmtTime(t.createdAt) + ' 发布');
+  const seal = document.getElementById('lock-seal');
+  seal.hidden = !t.locked;
+  seal.innerHTML = t.locked
+    ? '<span class="lock-stripes"></span><span class="lock-label">⛔ 此帖已封锁 · 禁止回复</span><span class="lock-stripes"></span>'
+    : '';
+  $('replies').classList.toggle('locked-dim', !!t.locked);
+  $('t-body').textContent = t.body;
+  $('t-images').innerHTML = (t.images || []).map(x => '<img loading="lazy" decoding="async" src="' + FF.esc(x) + '" alt="帖子配图">').join('');
+  $('t-body').classList.toggle('del-mark', !!t.deleted);
+  $('reply-count').textContent = t.replyCount + ' 条';
+
+  const isAdmin = !!(me && me.admin);
+  const isOwner = !!(me && me.user && me.user.id === t.authorId);
+  const logged = !!(me && me.user && me.user.status === 'approved');
+  const bar = $('t-authorbar');
+  if (t.deleted) {
+    bar.innerHTML = '<span class="del-mark">该帖子已被' + FF.esc((t.deletedBy && t.deletedBy.name) || '管理员') + '删除</span>';
+    bar.hidden = false;
+  } else {
+    const likeBtn = logged ? '<button class="btn like-btn' + (t.likedByMe ? ' liked' : '') + '" type="button" data-act="like">♥ ' + t.likes + '</button>' : '<span class="btn-mimic">♥ ' + t.likes + '</span>';
+    const lockBtn = (isAdmin || isOwner) ? '<button class="btn' + (t.locked ? '' : ' ghost') + '" type="button" data-act="lock">' + (t.locked ? '解除封锁' : '禁止回复') + '</button>' : '';
+    const pinBtn = isAdmin ? '<button class="btn' + (t.pinned ? '' : ' ghost') + '" type="button" data-act="pin">' + (t.pinned ? '取消置顶' : '置顶') + '</button>' : '';
+    const delBtn = (isAdmin || isOwner) ? '<button class="btn danger" type="button" data-act="del">删除</button>' : '';
+    bar.innerHTML =
+      '<div class="tm-person">' +
+        avatarHtml(t.author, t.avatar, t.authorId, 'tm-avatar', t.anon || t.authorNoProfile) +
+        '<div class="tm-id"><span class="tm-name"' + userAttr(t.authorId, t.anon || t.authorNoProfile) + '>' + FF.esc(t.author) + '</span>' + adminBadge(t.authorId) + (t.authorMuted ? '<span class="mute-tag">已禁言</span>' : '') +
+        '<span class="tm-time">' + FF.fmtTime(t.createdAt) + ' 发布</span></div>' +
+      '</div>' +
+      '<div class="tm-ops">' + likeBtn + lockBtn + pinBtn + delBtn + '</div>';
+    bar.hidden = false;
+  }
+  if (t.deleted) {
+    document.querySelectorAll('#reply-form, #replies, #reply-target').forEach(el => { el.hidden = true; });
+    return;
+  }
+  document.querySelectorAll('#reply-form, #replies').forEach(el => { el.hidden = false; });
+  document.getElementById('reply-form').hidden = !!t.locked;
+  document.getElementById('reply-target').hidden = true;
+  renderReplies(t, isAdmin, isOwner, logged);
+}
+
+function renderReplies(t, isAdmin, isOwner, logged) {
+  const list = t.replies || [];
+  $('replies').innerHTML = list.length ? list.map(r => {
+    const gone = !!r.deleted;
+    const mine = !!(me && me.user && me.user.id === r.authorId);
+    const canDel = !gone && logged && (isAdmin || isOwner || mine);
+    const canPin = !gone && logged && (isAdmin || isOwner);
+    const ops = gone ? '' :
+      '<div class="rp-ops">' +
+        (logged ? '<button class="btn ghost like-btn' + (r.likedByMe ? ' liked' : '') + '" type="button" data-rlike="' + FF.esc(r.id) + '">♥ ' + r.likes + '</button>' : '<span class="btn-mimic">♥ ' + r.likes + '</span>') +
+        (canPin ? '<button class="btn ghost" type="button" data-rpin="' + FF.esc(r.id) + '">' + (r.pinned ? '取消置顶' : '置顶') + '</button>' : '') +
+        (logged && !t.locked ? '<button class="btn ghost" type="button" data-rreply="' + FF.esc(r.id) + '">回复</button>' : '') +
+        (canDel ? '<button class="btn danger" type="button" data-rdel="' + FF.esc(r.id) + '">删除</button>' : '') +
+      '</div>';
+    const quote = (!gone && r.replyTo)
+      ? '<div class="rp-quote">@' + FF.esc(r.replyTo.author) + '(' + r.replyTo.floor + '楼)：</div>' : '';
+    return '<div class="reply-item' + (gone ? ' deleted' : '') + (r.pinned ? ' pinned' : '') + '" data-floor="' + r.floor + '">' +
+      '<div class="rp-head">' +
+        avatarHtml(r.author, r.avatar, r.authorId, 'rp-avatar', r.authorNoProfile) +
+        '<div class="rp-id"><span class="rp-name"' + userAttr(r.authorId, r.authorNoProfile) + '>' + FF.esc(r.author) + '</span>' + adminBadge(r.authorId) + (r.authorMuted ? '<span class="mute-tag">已禁言</span>' : '') +
+        '<span class="rp-floor">#' + r.floor + '楼</span>' +
+        (r.pinned ? '<span class="pin-tag">置顶</span>' : '') +
+        '<span class="rp-time">' + FF.fmtTime(r.createdAt) + '</span></div>' +
+      '</div>' +
+      '<div class="rp-body">' + quote + '<span class="rp-text' + (gone ? ' del-mark' : '') + '">' + FF.esc(r.body) + '</span></div>' +
+      ops +
+    '</div>';
+  }).join('') : '<p class="hint">还没有评论，来抢沙发吧。</p>';
+}
+
+function setReplyTarget(r) {
+  replyTarget = r;
+  const box = $('reply-target');
+  if (!r) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  box.innerHTML = '正在回复 <b>@' + FF.esc(r.author) + '(' + r.floor + '楼)</b>　<button class="btn ghost" type="button" id="cancel-reply">取消</button>';
+  $('cancel-reply').onclick = () => { setReplyTarget(null); };
+  $('reply-text').focus();
+}
+
+$('t-authorbar').onclick = async e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'pin' && !confirm(cur.pinned ? '取消置顶？' : '置顶这条帖子？')) return;
+  if (act === 'del' && !confirm('删除这条帖子？删除后会标注操作人。')) return;
+  if (act === 'lock' && !confirm(cur.locked ? '解除封锁，允许回复？' : '封锁此帖？封锁后所有人（包括管理员）都无法回复。')) return;
+  try { await FF.api('/api/threads/' + encodeURIComponent(tid) + '/' + act, { body: {} }); await load(); }
+  catch (e) { $('t-status').textContent = e.message; }
+};
+
+$('replies').onclick = async e => {
+  const like = e.target.closest('[data-rlike]');
+  if (like) { try { await FF.api('/api/replies/' + encodeURIComponent(like.dataset.rlike) + '/like', { body: {} }); await load(); } catch (err) { $('t-status').textContent = err.message; } return; }
+  const pin = e.target.closest('[data-rpin]');
+  if (pin) {
+    const r = (cur.replies || []).find(x => x.id === pin.dataset.rpin);
+    if (r && !confirm(r.pinned ? '取消该评论置顶？' : '置顶这条评论？')) return;
+    try { await FF.api('/api/replies/' + encodeURIComponent(pin.dataset.rpin) + '/pin', { body: {} }); await load(); } catch (err) { $('t-status').textContent = err.message; } return;
+  }
+  const rep = e.target.closest('[data-rreply]');
+  if (rep) {
+    const r = (cur.replies || []).find(x => x.id === rep.dataset.rreply);
+    if (r) setReplyTarget(r);
+    return;
+  }
+  const del = e.target.closest('[data-rdel]');
+  if (del) {
+    if (!confirm('删除这条评论？删除后会标注操作人。')) return;
+    try { await FF.api('/api/replies/' + encodeURIComponent(del.dataset.rdel) + '/delete', { body: {} }); await load(); } catch (err) { $('t-status').textContent = err.message; }
+  }
+};
+
+$('reply-form').onsubmit = async e => {
+  e.preventDefault();
+  const body = $('reply-text').value.trim();
+  if (!body) return;
+  try {
+    await FF.api('/api/threads/' + encodeURIComponent(tid) + '/replies', {
+      body: { body, replyToId: replyTarget ? replyTarget.id : undefined }
+    });
+    $('reply-text').value = '';
+    setReplyTarget(null);
+    await load();
+  } catch (err) { $('t-status').textContent = err.message; }
+};
+
+function eatenTakeover() {
+  if (document.querySelector('.eaten-veil')) return;
+  const veil = document.createElement('div');
+  veil.className = 'eaten-veil';
+  veil.innerHTML = '<div class="eaten-404">404</div><div class="eaten-line">帖子好像被吃掉了</div>';
+  document.body.appendChild(veil);
+  veil.classList.add('eaten-shake');
+  setTimeout(() => veil.classList.remove('eaten-shake'), 900);
+}
+async function load() {
+  try { render(await FF.api('/api/threads/' + encodeURIComponent(tid))); }
+  catch (err) {
+    if (/未找到/.test(err.message)) eatenTakeover();
+    else $('t-status').textContent = err.message;
+  }
+}
+(async () => {
+  me = await FF.session();
+  await FF.renderHeader();
+  FF.bindProfileClicks(document);
+  if (!tid) { eatenTakeover(); return; }
+  await load();
+  FF.sse({
+    reply: ev => { if (!ev || ev.threadId === tid) load(); },
+    like: ev => { if (!ev || ev.threadId === tid) load(); },
+    thread: ev => { if (!ev || ev.id === tid) load(); }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 我的主页</title>
+<link rel="stylesheet" href="/assets/forum.css">
+</head>
+<body data-section="me" data-section-name="我的主页">
+<header id="site-header"></header>
+
+<div class="auth-win" id="gate" hidden>
+  <h1>切换账号 / 登入</h1>
+  <p class="kicker cool">LOGIN / CHARACTER + PLAYER</p>
+  <label class="lab">角色名（设卡上的角色名字，也可填网名）<input class="field" id="login-nick" maxlength="24"></label>
+  <label class="lab">玩家名（CN / 车主）<input class="field" id="login-player" maxlength="24"></label>
+  <div class="actions">
+    <button class="btn primary" type="button" id="login-go">登入</button>
+  </div>
+  <p class="status" id="login-status" role="status"></p>
+</div>
+
+<div id="zone" hidden>
+  <div class="toolbar-strip">
+    <span class="spacer" id="bar-name">怪啖论坛 » 我的主页</span>
+    <button class="btn primary" type="button" id="edit-me">修改账号</button>
+    <button class="btn" type="button" id="switch">切换账号</button>
+    <a class="btn" href="index.html">回聊天室</a>
+  </div>
+  <p class="status" id="audit" role="status"></p>
+  <div id="sheet-box"></div>
+  <details class="origin-card" id="origin-card" hidden>
+    <summary>查看人设卡</summary>
+    <div class="origin-inner"><img id="origin-img" alt="原始设卡"></div>
+  </details>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+
+function openLogin() {
+  const status = $('login-status');
+  $('login-go').onclick = async () => {
+    status.textContent = '正在登入…';
+    try {
+      await FF.api('/api/login', { body: { nickname: $('login-nick').value, playerName: $('login-player').value } });
+      location.reload();
+    } catch (err) { status.textContent = err.message; }
+  };
+}
+openLogin();
+
+const FACTION_TEXT = (f, me) => me && me.playerName === 'admin' ? 'admin' : (f === 'office' ? '异常对策课' : '怪谈侦探');
+const field = (label, val, cls) =>
+  '<div class="pf-row"><span class="pf-label">' + FF.esc(label) + '</span>' +
+  '<div class="pf-val' + (cls ? ' ' + cls : '') + '">' + (val ? FF.esc(val) : '<span class="pf-empty">（未填写）</span>') + '</div></div>';
+const multi = (label, val) =>
+  '<div class="pf-block"><h3>' + FF.esc(label) + '</h3><div class="pf-text">' +
+  (val ? FF.esc(val).replace(/\n/g, '<br>') : '<span class="pf-empty">（未填写）</span>') + '</div></div>';
+
+function renderSheet(me) {
+  const p = me.public || {}, a = me.archive || {};
+  const faction = me.faction === 'office' ? 'office' : 'forum';
+  $('bar-name').textContent = '怪啖论坛 » ' + me.nickname + ' 的主页';
+  $('sheet-box').innerHTML =
+    '<div class="psheet ' + faction + '">' +
+      '<div class="ps-top"><span>个人主页 / PROFILE</span><span class="ps-tag">' + FACTION_TEXT(faction, me) + '</span></div>' +
+      '<div class="ps-body">' +
+        '<div class="ps-identity">' +
+          '<img class="ps-avatar" src="' + FF.esc(me.avatar || '') + '" alt="头像">' +
+          '<div><h1>' + FF.esc(me.nickname) + '</h1>' +
+          '<div class="kicker cool">PLAYER / ' + FF.esc(me.playerName || '（匿名）') + '</div>' +
+          '<p class="ps-status">' + (me.status === 'approved' ? '已通过审核' : me.status === 'pending' ? '审核中' : '未通过审核') + '</p></div>' +
+        '</div>' +
+        '<div class="ps-cols">' +
+          '<section class="ps-win"><div class="ps-win-bar">公开资料 <small>PUBLIC PROFILE</small></div><div class="ps-win-body">' +
+            field('性别', p.gender || '保密') + field('年龄', p.age) + multi('个性签名', p.signature) + multi('个人简介', p.intro) +
+          '</div></section>' +
+          '<section class="ps-win"><div class="ps-win-bar">真实档案 <small>PERSONNEL FILE</small></div><div class="ps-win-body">' +
+            field('姓名', a.realName) + field('性别', a.realGender) + field('年龄', a.realAge) +
+            field('种族', a.species) + field('身高', a.height) + multi('人物设定', a.history) +
+          '</div></section>' +
+        '</div>' +
+        (me.portrait ? '<section class="ps-win"><div class="ps-win-bar">个人形象 <small>PORTRAIT</small></div><div class="ps-win-body ps-portrait"><img loading="lazy" decoding="async" src="' + FF.esc(me.portrait) + '" alt="立绘"></div></section>' : '') +
+      '</div>' +
+    '</div>';
+  const origin = $('origin-card');
+  if (me.card) { $('origin-img').src = me.card; origin.hidden = false; }
+  else origin.hidden = true;
+}
+
+async function readImage(file, maxEdge) {
+  if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024)
+    throw new Error('请选择 20 MB 以内的 PNG、JPG 或 WebP 图片。');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    if (!img.naturalWidth || !img.naturalHeight) throw new Error('这张图片无法打开。');
+    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    try {
+      const webp = canvas.toDataURL('image/webp', maxEdge >= 2000 ? 0.9 : 0.88);
+      if (webp.slice(0, 14) === 'data:image/webp') return webp;
+    } catch (e) {}
+    return canvas.toDataURL('image/png');
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function openEdit(me) {
+  const p = me.public || {}, a = me.archive || {};
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 12px;color:#ff5940;letter-spacing:2px">修改账号 · ' + FF.esc(me.nickname) + '</h3>' +
+    '<p class="hint">仅你本人可见的编辑入口。网名可随时修改；玩家名与阵营需联系管理员。</p>' +
+    '<label class="lab">网名（网站显示名）<input class="field" id="em-nickname" maxlength="24" value="' + FF.esc(me.nickname || '') + '"></label>' +
+    '<div class="pf-uploads">' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">头像</div>' +
+        '<button type="button" class="pf-upload-box" id="up-avatar-box"><img id="up-avatar-img" src="' + FF.esc(me.avatar || '') + '"' + (me.avatar ? '' : ' hidden') + ' alt="头像预览"><span>点击更换头像</span></button>' +
+        '<input type="file" id="up-avatar-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">点击图片选择文件</div></div>' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">人设卡</div>' +
+        '<button type="button" class="pf-upload-box card" id="up-card-box"><img id="up-card-img" src="' + FF.esc(me.card || '') + '"' + (me.card ? '' : ' hidden') + ' alt="设卡预览"><span>点击上传人设卡</span></button>' +
+        '<input type="file" id="up-card-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">可在制卡工具导出 PNG 后上传</div></div>' +
+    '</div>' +
+    '<div class="pf-edit-grid">' +
+      '<label class="lab">公开性别<input class="field" id="em-gender" maxlength="12" value="' + FF.esc(p.gender || '') + '"></label>' +
+      '<label class="lab">公开年龄<input class="field" id="em-age" maxlength="4" value="' + FF.esc(p.age || '') + '"></label>' +
+      '<label class="lab">个性签名<textarea class="field" id="em-signature" rows="2" maxlength="60">' + FF.esc(p.signature || '') + '</textarea></label>' +
+      '<label class="lab">个人简介<textarea class="field" id="em-intro" rows="4" maxlength="180">' + FF.esc(p.intro || '') + '</textarea></label>' +
+      '<label class="lab">真实姓名<input class="field" id="em-realName" maxlength="24" value="' + FF.esc(a.realName || '') + '"></label>' +
+      '<label class="lab">真实性别<input class="field" id="em-realGender" maxlength="12" value="' + FF.esc(a.realGender || '') + '"></label>' +
+      '<label class="lab">真实年龄<input class="field" id="em-realAge" maxlength="12" value="' + FF.esc(a.realAge || '') + '"></label>' +
+      '<label class="lab">种族<input class="field" id="em-species" maxlength="24" value="' + FF.esc(a.species || '') + '"></label>' +
+      '<label class="lab">身高<input class="field" id="em-height" maxlength="12" value="' + FF.esc(a.height || '') + '"></label>' +
+      '<label class="lab">人物设定<textarea class="field" id="em-history" rows="5" maxlength="1000">' + FF.esc(a.history || '') + '</textarea></label>' +
+    '</div>' +
+    '<div style="margin-top:14px"><button class="btn primary" type="button" id="em-save">保存修改</button></div>' +
+    '<p class="status" id="em-status" role="status"></p>', true);
+  const g = id => back.querySelector('#' + id).value;
+  const status = () => back.querySelector('#em-status');
+  const staged = { avatar: null, card: null };
+
+  function bindUpload(slot, boxId, fileId, imgId, maxEdge) {
+    const box = back.querySelector('#' + boxId), file = back.querySelector('#' + fileId);
+    const img = back.querySelector('#' + imgId);
+    box.onclick = () => file.click();
+    file.onchange = async () => {
+      if (!file.files[0]) return;
+      status.textContent = '正在读取' + (slot === 'avatar' ? '头像' : '人设卡') + '…';
+      try {
+        const dataUrl = await readImage(file.files[0], maxEdge);
+        staged[slot] = dataUrl;
+        img.src = dataUrl; img.hidden = false;
+        status.textContent = '图片已就绪，点「保存修改」生效。';
+      } catch (err) { status.textContent = err.message; }
+      file.value = '';
+    };
+  }
+  bindUpload('avatar', 'up-avatar-box', 'up-avatar-file', 'up-avatar-img', 1024);
+  bindUpload('card', 'up-card-box', 'up-card-file', 'up-card-img', 4800);
+
+  back.querySelector('#em-save').onclick = async () => {
+    const btn = back.querySelector('#em-save');
+    btn.disabled = true;
+    status.textContent = '保存中…';
+    try {
+      let res = await FF.api('/api/me/edit', { body: {
+        nickname: g('em-nickname'),
+        public: { gender: g('em-gender'), age: g('em-age'), signature: g('em-signature'), intro: g('em-intro') },
+        archive: { realName: g('em-realName'), realGender: g('em-realGender'), realAge: g('em-realAge'), species: g('em-species'), height: g('em-height'), history: g('em-history') }
+      } });
+      for (const slot of ['avatar', 'card']) {
+        if (staged[slot]) res = await FF.api('/api/me/image', { body: { slot, dataUrl: staged[slot] } });
+      }
+      const fresh = await FF.api('/api/me');
+      renderSheet(fresh);
+      me = fresh;
+      staged.avatar = staged.card = null;
+      status.textContent = '已保存。';
+    } catch (err) { status.textContent = err.message; }
+    finally { btn.disabled = false; }
+  };
+}
+
+(async () => {
+  await FF.renderHeader();
+  const s = await FF.session();
+  if (!s.user) { $('gate').hidden = false; return; }
+  $('zone').hidden = false;
+  const me = await FF.api('/api/me');
+  renderSheet(me);
+  $('audit').textContent = me.status === 'approved' ? '' : me.status === 'pending' ? '账号审核中：通过审核后即可在聊天室发言与投稿怪谈。' : '账号未通过审核，请联系论坛管理员。';
+  $('edit-me').onclick = () => openEdit(me);
+  $('switch').onclick = () => FF.switchAccount();
+  if (new URLSearchParams(location.search).get('edit') === '1') openEdit(me);
+})().catch(err => { $('login-status').textContent = err.message; });
+</script>
+</body>
+</html>

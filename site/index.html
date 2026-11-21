@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 公共聊天室</title>
+<link rel="stylesheet" href="/assets/forum.css">
+<body data-section="chat" data-section-name="公共聊天室">
+<header id="site-header"></header>
+
+<div class="layout">
+  <main>
+    <section class="win">
+      <div class="win-bar">
+        <span class="bar-title">公共聊天室</span>
+        <span class="bar-sub">PUBLIC CHAT / LIVE</span>
+        <span class="online-badge" id="online-count" title="当前在线人数"><i class="dot"></i>在线 —</span>
+        <span class="corner" aria-hidden="true">×</span>
+      </div>
+      <div class="chat-log scan" id="chat-log" aria-live="polite"></div>
+      <div class="chat-gate" id="chat-gate" hidden>
+        <h2 id="gate-title">登入怪啖论坛</h2>
+        <p class="hint" id="gate-note">聊天室发言与怪谈投稿需要已注册并通过审核的账号。</p>
+        <div class="actions">
+          <button class="btn primary" type="button" id="gate-login">切换账号 / 登入</button>
+          <a class="btn" href="register.html">创建账号（制卡工具）</a>
+        </div>
+        <p class="status" id="gate-status" role="status"></p>
+      </div>
+      <form class="chat-input" id="chat-form" hidden>
+        <textarea class="field" id="chat-text" maxlength="500" placeholder="说点什么……（Enter 发送，Shift + Enter 换行）"></textarea>
+        <button class="btn primary" type="submit" id="chat-send">发送</button>
+      </form>
+    </section>
+  </main>
+
+  <aside class="side">
+    <section class="win">
+      <div class="win-bar"><span class="bar-title">当前账号</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body" id="me-box"></div>
+    </section>
+    <section class="win">
+      <div class="win-bar"><span class="bar-title">公告栏</span><span class="bar-sub">NOTICE</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body">
+        <div id="motd"></div>
+      </div>
+    </section>
+    <section class="win">
+      <div class="win-bar"><span class="bar-title">怪谈速览</span><span class="bar-sub">ARCHIVE</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><ul class="mini-list" id="post-list"></ul></div>
+    </section>
+  </aside>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const log = document.getElementById('chat-log');
+const gate = document.getElementById('chat-gate');
+const gateTitle = document.getElementById('gate-title');
+const gateNote = document.getElementById('gate-note');
+const gateStatus = document.getElementById('gate-status');
+const form = document.getElementById('chat-form');
+const input = document.getElementById('chat-text');
+const meBox = document.getElementById('me-box');
+const postList = document.getElementById('post-list');
+const motdEl = document.getElementById('motd');
+const onlineEl = document.getElementById('online-count');
+let lastId = 0;
+let stick = true;
+
+/* 在线人数：初值来自 /api/online，之后由 SSE 的 online 事件实时刷新 */
+function setOnline(d) {
+  if (!d || typeof d.count !== 'number') return;
+  onlineEl.innerHTML = '<i class="dot"></i>在线 ' + d.count + ' 人';
+  onlineEl.title = '当前在线 ' + d.count + ' 人（登入 ' + (d.members || 0) + ' 人 · 访客 ' + (d.guests || 0) + ' 人）';
+}
+
+/* 公告栏：管理员输入的每一行渲染成一条，沿用 mini-list 的虚线分隔与 hint 文字样式 */
+function renderMotd(value) {
+  const lines = String(value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  motdEl.innerHTML = lines.length
+    ? '<ul class="mini-list">' + lines.map(line => '<li><span class="hint">' + FF.esc(line) + '</span></li>').join('') + '</ul>'
+    : '';
+}
+
+FF.bindProfileClicks(log);
+log.addEventListener('scroll', () => { stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 40; });
+
+function appendMsg(msg) {
+  if (msg.id <= lastId) return;
+  lastId = msg.id;
+  log.appendChild(FF.msgRow(msg));
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+async function loadMessages() {
+  const list = await FF.api('/api/messages');
+  list.forEach(appendMsg);
+  log.scrollTop = log.scrollHeight;
+}
+async function loadPosts() {
+  const list = await FF.api('/api/posts');
+  postList.innerHTML = list.length
+    ? list.slice(0, 6).map(p => '<li><span class="tag ' + p.type + '">' + (p.type === 'puzzle' ? '【谜题】' : '【战斗】') + '</span><a href="archives.html#' + FF.esc(p.id) + '">' + FF.esc(p.name) + '</a>' + (p.closed ? '<span class="tag closed">已归档</span>' : '') + '</li>').join('')
+    : '<li><span class="hint">暂无已过审的怪谈档案。</span></li>';
+}
+function renderMe(s) {
+  if (!s.user) {
+    meBox.innerHTML = '<p class="hint">尚未登入。</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" type="button" id="side-login">登入 / 切换账号</button><a class="btn" href="register.html">创建账号</a></div>';
+    document.getElementById('side-login').onclick = doSwitch;
+    return;
+  }
+  const u = s.user;
+  meBox.innerHTML =
+    '<div class="me-row"><img src="' + FF.esc(u.avatar || '') + '" alt="头像"><div><div class="name">' + FF.esc(u.nickname) + '</div>' +
+    '<div class="hint">' + (u.status === 'approved' ? '已通过审核' : u.status === 'pending' ? '审核中' : '未通过审核') + '</div></div></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><a class="btn" href="me.html">我的主页</a><button class="btn ghost" type="button" id="side-switch">切换账号</button></div>';
+  document.getElementById('side-switch').onclick = doSwitch;
+}
+
+/* 统一的切换账号入口：已登录→同玩家账号切换弹窗；未登录→登入弹窗 */
+async function doSwitch() {
+  const s = await FF.session(true);
+  if (s.user) { await FF.switchAccount(); return; }
+  openLogin();
+}
+function renderGate(s) {
+  if (s.user && s.user.status === 'approved') {
+    gate.hidden = true; form.hidden = false; return;
+  }
+  form.hidden = true; gate.hidden = false;
+  if (s.user && s.user.status === 'pending') {
+    gateTitle.textContent = '账号审核中';
+    gateNote.textContent = '「' + s.user.nickname + '」的注册已提交，等待管理员审核。通过审核后即可发言与投稿。';
+  } else if (s.user) {
+    gateTitle.textContent = '账号未通过审核';
+    gateNote.textContent = '如有疑问请联系论坛管理员。';
+  } else {
+    gateTitle.textContent = '登入怪啖论坛';
+  }
+}
+function openLogin() {
+  const back = FF.openModal(
+    '<h1 style="margin:0 0 4px;font-size:20px;letter-spacing:3px">切换账号 / 登入</h1>' +
+    '<p class="kicker cool">LOGIN / CHARACTER + PLAYER</p>' +
+    '<label class="lab">角色名（设卡上的角色名字，也可填网名）<input class="field" id="login-nick" maxlength="24" autocomplete="off"></label>' +
+    '<label class="lab">玩家名（CN / 车主）<input class="field" id="login-player" maxlength="24" autocomplete="off"></label>' +
+    '<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap"><button class="btn primary" type="button" id="login-go">登入</button><a class="btn" href="register.html">还没有账号？去制卡</a></div>' +
+    '<p class="status" id="login-status" role="status"></p>'
+  );
+  const status = back.querySelector('#login-status');
+  back.querySelector('#login-go').onclick = async () => {
+    status.textContent = '正在登入…';
+    try {
+      await FF.api('/api/login', { body: { nickname: back.querySelector('#login-nick').value, playerName: back.querySelector('#login-player').value } });
+      location.reload();
+    } catch (err) { status.textContent = err.message; }
+  };
+  back.querySelector('#login-nick').focus();
+}
+document.getElementById('gate-login').onclick = doSwitch;
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  const btn = document.getElementById('chat-send');
+  btn.disabled = true;
+  try {
+    const msg = await FF.api('/api/messages', { body: { text } });
+    input.value = '';
+    appendMsg(msg);
+    stick = true; log.scrollTop = log.scrollHeight;
+  } catch (err) {
+    gateStatus.textContent = err.message;
+    if (/登入|审核/.test(err.message)) { gate.hidden = false; form.hidden = true; }
+  } finally { btn.disabled = false; }
+});
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+});
+
+(async () => {
+  await FF.renderHeader();
+  const s = await FF.session();
+  renderGate(s);
+  renderMe(s);
+  renderMotd(s.config && s.config.motd);
+  await Promise.all([loadMessages(), loadPosts()]);
+  FF.api('/api/online').then(setOnline).catch(() => {});
+  FF.sse({
+    message: appendMsg,
+    messageDelete: d => { const row = log.querySelector('[data-id="' + d.id + '"]'); if (row) row.remove(); },
+    messageUpdate: msg => {
+      const old = log.querySelector('[data-id="' + msg.id + '"]');
+      const fresh = FF.msgRow(msg);
+      if (old) log.replaceChild(fresh, old);
+      else if (msg.id > lastId) { log.appendChild(fresh); lastId = msg.id; if (stick) log.scrollTop = log.scrollHeight; }
+    },
+    post: () => loadPosts(),
+    online: setOnline,
+    config: c => renderMotd(c.motd)
+  });
+})().catch(err => { gate.hidden = false; gateNote.textContent = err.message; });
+</script>
+</body>
+</html>

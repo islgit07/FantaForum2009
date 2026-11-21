@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 怪谈档案</title>
+<link rel="stylesheet" href="/assets/forum.css">
+<body data-section="archives" data-section-name="怪谈档案">
+<header id="site-header"></header>
+
+<div class="layout single">
+  <main>
+    <h1 class="page-title">怪谈档案<span class="en">ANOMALY ARCHIVE</span></h1>
+    <p class="hint">调查委托板块：已过审的怪谈投稿。点击卡面查看完整档案。</p>
+    <div class="filters" id="filters">
+      <button class="btn active" type="button" data-f="all">全部</button>
+      <button class="btn" type="button" data-f="combat">【战斗】</button>
+      <button class="btn" type="button" data-f="puzzle">【谜题】</button>
+      <button class="btn ghost" type="button" data-f="closed">仅已归档</button>
+    </div>
+    <div class="post-grid" id="grid"></div>
+    <p class="status" id="status" role="status"></p>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const grid = document.getElementById('grid');
+const statusEl = document.getElementById('status');
+let posts = [];
+let filter = 'all';
+
+function render() {
+  const list = posts.filter(p =>
+    filter === 'all' ? true : filter === 'closed' ? p.closed : p.type === filter);
+  grid.innerHTML = list.length ? list.map(p =>
+    '<figure class="post-card" data-id="' + FF.esc(p.id) + '" id="' + FF.esc(p.id) + '" style="margin:0">' +
+    '<img loading="lazy" decoding="async" src="' + FF.esc(p.card || '') + '" alt="' + FF.esc(p.name) + ' 卡面">' +
+    '<figcaption class="cap"><div class="name"><span class="tag ' + p.type + '">' + (p.type === 'puzzle' ? '【谜题】' : '【战斗】') + '</span>' + FF.esc(p.name) + '</div>' +
+    '<div class="sub">@' + FF.esc(p.author) + ' · ' + FF.fmtTime(p.createdAt) + (p.closed ? ' · STATUS/CLOSED' : ' · STATUS/OPEN') + '</div></figcaption></figure>'
+  ).join('') : '<p class="hint">没有符合条件的怪谈档案。</p>';
+}
+function openPost(id) {
+  const p = posts.find(x => x.id === id);
+  if (!p) return;
+  FF.openModal(
+    '<img class="full" src="' + FF.esc(p.card || '') + '" alt="' + FF.esc(p.name) + ' 卡面">' +
+    '<div style="margin-top:14px">' +
+    '<div class="profile-section"><h3>怪谈影响范围</h3><p>' + (FF.esc(p.area) || '（未填写）') + '</p></div>' +
+    '<div class="profile-section"><h3>怪谈机制</h3><p>' + (FF.esc(p.mechanism) || '（未填写）') + '</p></div>' +
+    '<div class="profile-section"><h3>' + (p.type === 'puzzle' ? '谜底 / 解题思路' : '怪谈对策') + '</h3><p>' + (FF.esc(p.countermeasures) || '（未填写）') + '</p></div>' +
+    '<div class="profile-section"><h3>投稿信息</h3><p>投稿人 @' + FF.esc(p.author) + '　设主 ' + FF.esc(p.owner || '（匿名）') + '　' + FF.fmtTime(p.createdAt) + '<br>公共创作素材：' + (p.sharing === 'yes' ? '是（暂未处理）' : '否（已处理，仅归档）') + '</p></div>' +
+    '</div>', true);
+}
+document.getElementById('filters').addEventListener('click', e => {
+  const b = e.target.closest('button[data-f]');
+  if (!b) return;
+  filter = b.dataset.f;
+  document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('active', x === b));
+  render();
+});
+grid.addEventListener('click', e => {
+  const card = e.target.closest('.post-card');
+  if (card) openPost(card.dataset.id);
+});
+async function load() {
+  try { posts = await FF.api('/api/posts'); render(); }
+  catch (err) { statusEl.textContent = err.message; }
+}
+(async () => {
+  await FF.renderHeader();
+  await load();
+  if (location.hash) {
+    const el = document.getElementById(location.hash.slice(1));
+    if (el) el.scrollIntoView({ block: 'center' });
+  }
+  FF.sse({ post: load });
+})();
+</script>
+</body>
+</html>

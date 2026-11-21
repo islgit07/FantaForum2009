@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>创建账号 · 怪啖论坛</title>
+<link rel="stylesheet" href="/assets/forum.css">
+<link rel="stylesheet" href="/assets/cardtool.css?v=20091130">
+<style>
+#site-header { position: relative; z-index: 60; }
+.bridge-note { position: relative; z-index: 55; }
+#cardtool>header{display:none} /* 站点导航已含品牌与音乐开关，隐藏工具自带顶栏 */
+</style>
+</head>
+<body data-section="register" data-section-name="创建账号">
+<script>
+/* 兼容补丁：个别环境（后台标签页/无头浏览器）中 image.decode() 可能永不 settle，
+   会使制卡工具的徽记与图片读取卡死。这里用 load 事件与之竞速，真实浏览器行为不变。 */
+(function () {
+  var orig = HTMLImageElement.prototype.decode;
+  HTMLImageElement.prototype.decode = function () {
+    var img = this;
+    return Promise.race([
+      orig.call(img).catch(function () {}),
+      new Promise(function (res) {
+        if (img.complete) return res();
+        img.addEventListener('load', function () { res(); }, { once: true });
+        img.addEventListener('error', function () { res(); }, { once: true });
+      })
+    ]);
+  };
+})();
+</script>
+<header id="site-header"></header>
+
+<div class="bridge-note">
+  <span class="kicker">REGISTRATION / CARD MAKER</span>
+</div>
+<div class="bridge-note" id="result-note" hidden style="border-color:#4d7a4f;background:#0b180cd9;color:#bcd8bb">
+  <span id="result-text"></span>
+  <a class="btn primary" href="index.html">去登入聊天室</a>
+</div>
+
+<div id="cardtool">
+
+<header><strong>怪啖论坛</strong>　 /　个人主页<button id="music-toggle" type="button" aria-pressed="false">音乐：关闭</button></header>
+<audio id="background-music" src="/tools/card/assets/forum-music.mp3" loop preload="none"></audio>
+<div class="music-gate" id="music-gate" role="dialog" aria-modal="true" aria-labelledby="music-title">
+<div class="music-dialog"><h1 id="music-title">是否开启背景音乐？</h1><p>进入怪啖论坛，音乐将循环播放。</p><div class="music-actions"><button class="primary" id="music-yes" type="button">开启音乐并进入</button><button id="music-no" type="button">静音进入</button></div><p id="music-status" role="status"></p></div></div>
+<div id="welcome-scene" hidden aria-label="欢迎注册怪啖论坛！"><canvas id="welcome-text" width="800" height="90" aria-hidden="true"></canvas><span class="screen-reader" role="status" id="welcome-status"></span></div><main id="main-content" hidden>
+
+<form class="registration" id="registration">
+<h1>注册个人主页</h1>
+<label>角色网名<input name="nickname" required maxlength="24" autocomplete="off" placeholder="填写你在论坛上显示的名字"></label>
+<div class="avatar-registration"><span>头像</span><button type="button" class="avatar-upload" id="upload-avatar-button"><img id="avatar-sample" class="avatar-sample" alt="头像预览" hidden><span>上传头像</span></button><input type="file" id="register-avatar" accept="image/png,image/jpeg,image/webp" hidden></div>
+<fieldset class="registration-factions"><legend>你的身份是？</legend><div class="factions">
+<label><input type="radio" name="faction" value="forum" checked><span><canvas class="choice-logo" data-faction-logo="forum" width="160" height="110" aria-hidden="true"></canvas><b>怪谈侦探</b></span></label>
+<label><input type="radio" name="faction" value="office"><span><canvas class="choice-logo" data-faction-logo="office" width="160" height="110" aria-hidden="true"></canvas><b>异常对策课</b></span></label>
+</div></fieldset>
+<button class="primary" id="enter">进入个人主页 →</button><p id="register-status" role="status"></p>
+</form>
+<section id="editor" hidden>
+<div class="toolbar"><span>怪啖论坛 » 我的个人主页　·　点击文字框即可填写</span><button id="switch-faction" type="button">切换阵营：查看异常对策课</button><button id="back" type="button">返回注册页</button><button id="export" class="primary" type="button">导出企卡 PNG</button></div>
+<div class="preview-viewport" id="preview-viewport"><div class="sheet" id="sheet"><canvas id="background-details" width="1600" height="1000" aria-hidden="true"></canvas><img class="building-decoration" src="/tools/card/assets/card-asset-1.webp" alt=""><canvas id="scanline-texture" width="1600" height="1000" aria-hidden="true"></canvas><div class="recording-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="recording-label top"><b>●</b> REC</span><span class="recording-label bottom">PLAYBACK / PROFILE</span></div><div class="card-content"><canvas class="forum-signature" id="forum-signature" width="500" height="88" aria-label="怪啖论坛 www.FantaForum.fmi"></canvas>
+<section class="forum" aria-label="论坛公开资料">
+<div class="bar"><span>个人主页</span><span class="corner" aria-hidden="true">×</span><canvas class="window-icon" width="32" height="40" aria-hidden="true"></canvas></div>
+<div class="identity"><button class="avatar-button" type="button" id="replace-avatar" aria-label="更换头像"><img id="avatar" alt="论坛头像"></button><div class="identity-info"><label class="screen-reader" for="nickname">角色网名</label><input id="nickname" data-key="nickname" maxlength="24" placeholder="角色网名"><div class="pair profile-basics"><label>性别<select data-key="publicGender" aria-label="公开性别"><option value="保密">保密</option><option>男</option><option>女</option><option>其他</option></select></label><label>年龄<div class="age-controls"><input data-key="publicAge" type="number" min="0" max="9999" step="1" aria-label="公开年龄，留空为保密" placeholder="保密"></div></label></div></div></div>
+<label>个性签名<textarea data-key="signature" maxlength="60" rows="2" placeholder="留下你的签名吧"></textarea></label>
+<label>个人简介<textarea data-key="intro" maxlength="180" rows="7" placeholder="在论坛里，你会怎样介绍自己？"></textarea></label>
+</section>
+<section class="middle" aria-label="阵营与角色立绘">
+<div class="emblem"><canvas class="faction-logo" width="390" height="380" aria-label="阵营 Logo"></canvas></div>
+<div class="portrait-shell"><div class="portrait-title"><span>个人形象</span><span class="corner" aria-hidden="true">×</span><canvas class="window-icon" width="32" height="40" aria-hidden="true"></canvas></div><div class="portrait-window" id="portrait-window" aria-label="立绘窗口，上传后可拖动调整位置"><canvas id="portrait-scanlines" width="367" height="667" aria-hidden="true"></canvas><button type="button" class="portrait-placeholder" id="portrait-placeholder"><canvas id="pixel-smile" width="180" height="340" aria-hidden="true"></canvas><span>点击这里添加形象（选填）</span></button><img id="portrait-image" alt="角色立绘" hidden></div></div>
+</section>
+<section class="archive" aria-label="角色真实档案"><h2>档案 <small id="archive-faction">// 怪谈侦探</small><span class="title-english">PERSONNEL FILE</span></h2>
+<label>姓名<input data-key="realName" maxlength="24" placeholder="填写姓名"></label><label>性别<input data-key="realGender" maxlength="12" placeholder="填写性别"></label><label>年龄<input data-key="realAge" maxlength="12" placeholder="填写年龄"></label><label>种族<input data-key="species" maxlength="24" placeholder="填写种族"></label><label>身高<input data-key="height" maxlength="12" placeholder="如 175 cm"></label><label class="history"><span>人物设定 <small>// profile</small></span><textarea data-key="history" maxlength="1000" placeholder="写下角色的经历、性格、能力等设定。建议 200 字以内。"></textarea></label>
+<label class="player-credit"><span>玩家名</span><input data-key="playerName" maxlength="24" placeholder="填写你的cn" aria-label="玩家名"></label></section></div></div></div>
+<div class="edit-tools"><strong class="adjust-title">调整立绘</strong><input id="portrait-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><label>大小<input id="zoom" type="range" min="0.4" max="3" step="0.01" value="1"></label><button id="reset" type="button">立绘居中</button><button type="button" id="replace-portrait" hidden>更换形象</button><small>也可在窗口内直接拖动</small></div>
+<p class="status" id="status" role="status"></p>
+</section><input id="avatar-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+</main>
+
+
+</div>
+
+<script src="/tools/card/assets/card-capture.js"></script>
+<script src="/tools/card/assets/card-runtime.web.js"></script>
+<script>
+/* 站点原生模式：跳过工具自带的音乐询问与欢迎动画（站点导航栏已有音乐开关），直接显示制卡界面 */
+(() => {
+  const gate = document.getElementById('music-gate');
+  const scene = document.getElementById('welcome-scene');
+  const main = document.getElementById('main-content');
+  const reg = document.getElementById('registration');
+  if (gate) gate.hidden = true;
+  if (scene) scene.hidden = true;
+  if (main) main.hidden = false;
+  if (reg) reg.classList.add('registration-enter');
+})();
+</script>
+<script src="/assets/forum.js?v=20091130"></script>
+<script src="/assets/web-bridge.js?v=20091130"></script>
+<script>
+'use strict';
+FF.renderHeader();
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data || e.data.source !== 'fanta-bridge') return;
+  if (e.data.tool !== 'card' || !e.data.ok || e.data.ready) return;
+  const note = document.getElementById('result-note');
+  note.hidden = false;
+  document.getElementById('result-text').textContent =
+    e.data.status === 'approved' ? '账号创建成功并已通过审核，可直接登入聊天室。' : '账号创建成功，已提交管理员审核；通过审核后即可发言与投稿。';
+  note.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+</script>
+</body>
+</html>

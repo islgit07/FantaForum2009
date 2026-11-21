@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 主页</title>
+<link rel="stylesheet" href="/assets/forum.css">
+<style>
+/* 距离新的一天倒计时（千禧年 CRT 风） */
+.cd-body { display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 20px 12px 18px; }
+.cd-digits { font-family: "Courier New", monospace; font-size: 42px; font-weight: bold; letter-spacing: 2px; color: #9bd9ff; text-shadow: 0 0 12px #6cc2ff66, 0 0 3px #6cc2ffaa; }
+.cd-digits i { font-style: normal; font-size: 16px; color: #ed3828; margin: 0 5px; text-shadow: none; letter-spacing: 1px; }
+.cd-cursor { font-family: "Courier New", monospace; font-size: 34px; color: #ed3828; animation: cd-blink 1s steps(1) infinite; }
+@keyframes cd-blink { 50% { opacity: 0; } }
+@media (max-width: 640px) { .cd-digits { font-size: 30px; } .cd-cursor { font-size: 24px; } }
+
+/* 跨夜彩蛋：不肯进入新的一天 */
+html.egg-red, html.egg-red body, html.egg-red body * { color: #ed3828 !important; text-shadow: 0 0 8px #ed382844 !important; }
+button.egg-pressed { transform: translateY(2px) scale(.97); filter: brightness(.5); box-shadow: none; pointer-events: none; }
+.egg-modal-title { margin: 8px 0 18px; font-size: 21px; letter-spacing: 2px; color: #e5d9d1; text-align: center; }
+</style>
+</head>
+<body data-section="home" data-section-name="主页">
+<header id="site-header"></header>
+
+<div class="layout single">
+  <main>
+    <h1 class="page-title">怪啖论坛<span class="en">FANTA FORUM / HOME</span></h1>
+
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">论坛公告</span><span class="bar-sub">ANNOUNCEMENT</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><div id="announce"></div></div>
+    </section>
+
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">距离新的一天</span><span class="bar-sub">MIDNIGHT COUNTDOWN</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body cd-body">
+        <span class="cd-digits" id="cd">--<i>时</i>--<i>分</i>--<i>秒</i></span>
+        <span class="cd-cursor">▍</span>
+      </div>
+    </section>
+
+    <div class="home-grid">
+      <section class="win" id="channels">
+        <div class="win-bar"><span class="bar-title">频道导航</span><span class="bar-sub">CHANNELS</span><span class="corner" aria-hidden="true">×</span></div>
+        <div class="win-body"><div class="chan-grid" id="channels"></div></div>
+      </section>
+      <section class="win">
+        <div class="win-bar"><span class="bar-title">人气排行</span><span class="bar-sub">TOP 5</span><span class="corner" aria-hidden="true">×</span></div>
+        <div class="win-body"><ol class="rank-list" id="ranking"></ol></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<footer class="site-foot">本日活跃人数：<span id="today-visits">—</span>人</footer>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const announce = document.getElementById('announce');
+const channelBox = document.getElementById('channels');
+const rankBox = document.getElementById('ranking');
+const visitBox = document.getElementById('today-visits');
+
+function renderHome(d) {
+  const realVisits = String(Number(d.todayVisits) || 0);
+  visitBox.textContent = realVisits;
+  /* 偶尔：活跃人数闪一瞬不该出现的数字 */
+  if (!window.__haunt4444 && Math.random() < 0.3) {
+    window.__haunt4444 = true;
+    setTimeout(() => {
+      visitBox.textContent = '4444';
+      setTimeout(() => { visitBox.textContent = realVisits; }, 140);
+    }, 2500 + Math.random() * 6000);
+  }
+  const a = d.announcement;
+  announce.innerHTML = a
+    ? '<div class="announce-card"><div class="bar"><span>管理员公告</span><span>' + FF.fmtTime(a.updatedAt) + '</span></div>' +
+      '<p>' + FF.esc(a.text) + '</p>' + (a.image ? '<img loading="lazy" decoding="async" src="' + FF.esc(a.image) + '" alt="公告图片">' : '') + '</div>'
+    : '<p class="announce-empty">（暂无公告）</p>';
+  channelBox.innerHTML = d.channels.length ? d.channels.map(c =>
+    '<a class="chan-card" href="channel.html?id=' + FF.esc(c.id) + '">' +
+      '<h3>' + FF.esc(c.name) + '</h3>' +
+      '<div class="desc">' + FF.esc(c.desc || '') + '</div>' +
+      '<div class="meta"><span>' + c.count + ' 篇帖子</span>' +
+      (c.hotThread ? '<span class="hot">HOT↑ ' + FF.esc(c.hotThread.title) + '</span>' : '') + '</div>' +
+    '</a>').join('') : '<p class="hint">暂无频道。</p>';
+  rankBox.innerHTML = d.ranking.length ? d.ranking.map(r =>
+    '<li><a href="thread.html?id=' + FF.esc(r.id) + '">' + FF.esc(r.title) +
+      (r.isNew ? '<span class="tag-new">new</span>' : '') + '</a>' +
+      '<span class="likes">♥ ' + r.likes + '</span></li>').join('') : '<li><span class="hint">暂无帖子。</span></li>';
+}
+
+(async () => {
+  await FF.renderHeader();
+  try { renderHome(await FF.api('/api/home')); }
+  catch (err) { announce.innerHTML = '<p class="status">' + FF.esc(err.message) + '</p>'; }
+  FF.sse({ announcement: () => FF.api('/api/home').then(renderHome), thread: () => FF.api('/api/home').then(renderHome), like: () => FF.api('/api/home').then(renderHome) });
+})();
+
+/* 距离新的一天倒计时 + 跨夜彩蛋 */
+const cdEl = document.getElementById('cd');
+let cdDay = new Date().getDate();
+let cdBroken = false, cdBrokenSec = 44, cdPressed = false;
+function cdTick() {
+  const now = new Date();
+  const d = now.getDate();
+  /* 跨夜瞬间仍开着页面的人：钟坏了 */
+  if (!cdBroken && d !== cdDay) {
+    cdBroken = true;
+    cdBrokenSec = 44;
+    setTimeout(cdEggModal, 3000);
+  }
+  cdDay = d;
+  if (cdBroken) {
+    cdEl.innerHTML = '-44<i>时</i>44<i>分</i>' + cdBrokenSec + '<i>秒</i>';
+    cdBrokenSec += 1; /* 秒不断增加，永不进位 */
+    return;
+  }
+  const next = new Date(now);
+  next.setHours(24, 0, 0, 0);
+  const s = Math.max(0, Math.floor((next - now) / 1000));
+  const p = n => String(n).padStart(2, '0');
+  cdEl.innerHTML = p(Math.floor(s / 3600)) + '<i>时</i>' + p(Math.floor(s % 3600 / 60)) + '<i>分</i>' + p(s % 60) + '<i>秒</i>';
+}
+function cdEggModal() {
+  const back = document.createElement('div');
+  back.className = 'modal-backdrop egg-modal';
+  back.innerHTML = '<div class="win modal"><div class="win-body">' +
+    '<p class="egg-modal-title">恭喜你！没有进入新的一天！</p>' +
+    '<div class="ee-actions"><button type="button" class="btn" id="egg-ok">确认</button></div>' +
+    '</div></div>';
+  document.body.appendChild(back);
+  back.querySelector('#egg-ok').onclick = function () {
+    if (cdPressed) return;
+    cdPressed = true;
+    this.classList.add('egg-pressed');
+    document.documentElement.classList.add('egg-red');   /* 字全都变红 */
+    setTimeout(() => {
+      this.classList.remove('egg-pressed');              /* 4 秒后按钮弹起，字色恢复 */
+      document.documentElement.classList.remove('egg-red');
+      cdPressed = false;
+      this.onclick = () => location.reload();            /* 再点一下：刷新网页，一切正常 */
+    }, 4000);
+  };
+}
+window.ffMidnightEgg = () => { if (!cdBroken) { cdBroken = true; cdBrokenSec = 44; setTimeout(cdEggModal, 3000); } }; /* 验证钩子 */
+cdTick();
+setInterval(cdTick, 1000);
+</script>
+</body>
+</html>

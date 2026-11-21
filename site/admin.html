@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 管理后台</title>
+<link rel="stylesheet" href="/assets/forum.css">
+<body data-section="admin" data-section-name="管理后台">
+<header id="site-header"></header>
+
+<div class="auth-win" id="gate" hidden>
+  <h1>管理员登入</h1>
+  <p class="kicker cool">ADMIN ACCESS / FANTA FORUM</p>
+  <label class="lab">管理员账号<input class="field" id="a-user" maxlength="40" autocomplete="username"></label>
+  <label class="lab">密码<input class="field" id="a-pass" type="password" autocomplete="current-password"></label>
+  <div class="actions"><button class="btn primary" type="button" id="a-go">登入后台</button></div>
+  <p class="status" id="a-status" role="status"></p>
+</div>
+
+<div class="layout single" id="zone" hidden>
+  <main>
+    <div class="tabs" id="tabs">
+      <button class="btn active" type="button" data-t="overview">概览</button>
+      <button class="btn" type="button" data-t="users">用户档案审核</button>
+      <button class="btn" type="button" data-t="posts">怪谈审核</button>
+      <button class="btn" type="button" data-t="messages">聊天管理</button>
+      <button class="btn" type="button" data-t="channels">频道管理</button>
+      <button class="btn" type="button" data-t="announce">公告管理</button>
+      <button class="btn" type="button" data-t="threads">帖子管理</button>
+      <button class="btn" type="button" data-t="system">系统设置</button>
+      <button class="btn ghost" type="button" id="a-logout" style="margin-left:auto">退出管理登入</button>
+    </div>
+    <div class="win">
+      <div class="win-bar"><span class="bar-title" id="tab-title">概览</span><span class="bar-sub">ADMIN CONSOLE</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body" id="panel"></div>
+    </div>
+    <p class="status" id="status" role="status"></p>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const panel = document.getElementById('panel');
+const statusEl = document.getElementById('status');
+let data = null;
+let tab = 'overview';
+
+const STATUS_TEXT = { approved: '已通过', pending: '审核中', rejected: '已驳回' };
+const factionText = (f, u) => u && u.playerName === 'admin' ? 'admin' : (f === 'office' ? '异常对策课' : '怪谈侦探');
+
+function viewImage(src, title) {
+  FF.openModal('<div class="win-bar" style="margin:-16px -16px 12px"><span class="bar-title">' + FF.esc(title || '查看') + '</span><span class="corner" aria-hidden="true">×</span></div><img class="full" src="' + FF.esc(src) + '" alt="">', true);
+}
+
+function htmlOverview() {
+  const c = data.counts;
+  return '<div class="stat-row">' +
+    '<div class="stat"><b>' + c.users + '</b><span>USERS / 注册账号</span></div>' +
+    '<div class="stat"><b>' + c.pendingUsers + '</b><span>PENDING / 待审用户</span></div>' +
+    '<div class="stat"><b>' + c.posts + '</b><span>ARCHIVES / 怪谈投稿</span></div>' +
+    '<div class="stat"><b>' + c.pendingPosts + '</b><span>PENDING / 待审怪谈</span></div>' +
+    '<div class="stat"><b>' + c.messages + '</b><span>MESSAGES / 聊天条数</span></div>' +
+    '<div class="stat"><b>' + (c.channels || 0) + '</b><span>CHANNELS / 频道数</span></div>' +
+    '<div class="stat"><b>' + (c.threads || 0) + '</b><span>THREADS / 帖子数</span></div>' +
+    '</div>' +
+    '<div class="profile-section"><h3>最近动态</h3><p>' +
+    (data.messages.slice(0, 12).map(m => FF.fmtTime(m.ts) + '　' + (m.kind === 'system' ? '〔系统〕' : '@' + FF.esc(m.nickname)) + '　' + FF.esc(m.text).slice(0, 60)).join('<br>') || '（暂无）') +
+    '</p></div>';
+}
+function htmlUsers() {
+  return '<table class="table"><tr><th>头像</th><th>角色 / 玩家</th><th>阵营</th><th>状态</th><th>操作</th></tr>' +
+    data.users.map(u => '<tr>' +
+      '<td>' + (u.avatar ? '<img class="thumb" loading="lazy" decoding="async" src="' + FF.esc(u.avatar) + '" data-view="' + FF.esc(u.avatar) + '" data-view-title="头像 · ' + FF.esc(u.nickname) + '" alt="头像（点击查看）">' : '') + '</td>' +
+      '<td><b style="color:#ffd9cf">' + FF.esc(u.nickname) + '</b><br><span class="hint">玩家 ' + FF.esc(u.playerName) + '</span><br><span class="hint">' + FF.esc((u.public || {}).signature || '') + '</span></td>' +
+      '<td>' + factionText(u.faction, u) + '</td>' +
+      '<td>' + (STATUS_TEXT[u.status] || u.status) + '<br><span class="hint">' + FF.fmtTime(u.createdAt) + '</span></td>' +
+      '<td><div class="actions">' +
+      '<button class="btn" type="button" data-edituser="' + u.id + '">编辑档案</button>' +
+      (u.card ? '<button class="btn" type="button" data-view="' + FF.esc(u.card) + '" data-view-title="设卡 · ' + FF.esc(u.nickname) + '">查看设卡</button>' : '') +
+      (u.portrait ? '<button class="btn" type="button" data-view="' + FF.esc(u.portrait) + '" data-view-title="形象 · ' + FF.esc(u.nickname) + '">查看形象</button>' : '') +
+      (u.status !== 'approved' ? '<button class="btn primary" type="button" data-act="users/' + u.id + '/approve">通过</button>' : '') +
+      (u.status !== 'rejected' ? '<button class="btn" type="button" data-act="users/' + u.id + '/reject">驳回</button>' : '') +
+      '<button class="btn danger" type="button" data-act="users/' + u.id + '/delete" data-confirm="确定移除账号「' + FF.esc(u.nickname) + '」？">移除</button>' +
+      '</div></td></tr>').join('') + '</table>';
+}
+function htmlPosts() {
+  return '<table class="table"><tr><th>卡面</th><th>怪谈</th><th>投稿</th><th>状态</th><th>操作</th></tr>' +
+    data.posts.map(p => '<tr>' +
+      '<td>' + (p.card ? '<img class="thumb tall" loading="lazy" decoding="async" src="' + FF.esc(p.card) + '" data-view="' + FF.esc(p.card) + '" data-view-title="卡面 · ' + FF.esc(p.name) + '" alt="卡面（点击查看）">' : '') +
+      (p.portrait ? '<img class="thumb tall" style="margin-top:6px" loading="lazy" decoding="async" src="' + FF.esc(p.portrait) + '" data-view="' + FF.esc(p.portrait) + '" data-view-title="形象 · ' + FF.esc(p.name) + '" alt="形象（点击查看）">' : '') + '</td>' +
+      '<td><span class="tag ' + p.type + '">' + (p.type === 'puzzle' ? '【谜题】' : '【战斗】') + '</span><b style="color:#f0d1c6">' + FF.esc(p.name) + '</b><br><span class="hint">' + FF.esc(p.area).slice(0, 40) + '</span></td>' +
+      '<td>@' + FF.esc(p.author) + '<br><span class="hint">设主 ' + FF.esc(p.owner || '—') + '</span></td>' +
+      '<td>' + (STATUS_TEXT[p.status] || p.status) + '<br>' + (p.closed ? '<span class="tag closed">已归档</span>' : '<span class="tag pending">开放中</span>') + '</td>' +
+      '<td><div class="actions">' +
+      '<button class="btn" type="button" data-editpost="' + p.id + '">编辑档案</button>' +
+      (p.status !== 'approved' ? '<button class="btn primary" type="button" data-act="posts/' + p.id + '/approve">通过</button>' : '') +
+      (p.status !== 'rejected' ? '<button class="btn" type="button" data-act="posts/' + p.id + '/reject">驳回</button>' : '') +
+      '<button class="btn" type="button" data-act="posts/' + p.id + '/toggleClosed">' + (p.closed ? '改为开放' : '改为归档') + '</button>' +
+      '<button class="btn danger" type="button" data-act="posts/' + p.id + '/delete" data-confirm="确定移除怪谈《' + FF.esc(p.name) + '》？">移除</button>' +
+      '</div></td></tr>').join('') + '</table>';
+}
+function htmlMessages() {
+  return '<table class="table"><tr><th>时间</th><th>发言者</th><th>内容</th><th>操作</th></tr>' +
+    data.messages.map(m => '<tr>' +
+      '<td class="hint">' + FF.fmtTime(m.ts) + '</td>' +
+      '<td>' + (m.kind === 'system' ? '〔系统〕' : FF.esc(m.nickname)) + '</td>' +
+      '<td>' + (m.adminDeleted ? '<span class="del-mark">【管理员已删除】</span>' : FF.esc(m.text)) + '</td>' +
+      '<td><button class="btn" type="button" data-act="messages/' + m.id + '/delete" data-mode="trace" data-confirm="带痕删除？保留发言人与时间，内容变为【管理员已删除】">带痕删除</button>' +
+      ' <button class="btn danger" type="button" data-act="messages/' + m.id + '/delete" data-mode="purge" data-confirm="无痕删除？整条消息彻底移除，不可恢复">无痕删除</button></td>' +
+      '</tr>').join('') + '</table>';
+}
+function htmlChannels() {
+  const list = (data.channels || []).map(c =>
+    '<tr><td>' + FF.esc(c.name) + '</td><td>' + FF.esc(c.desc || '') + '</td><td>' + (c.count || 0) + ' 篇</td><td>' + FF.fmtTime(c.createdAt) + '</td></tr>').join('');
+  return '<div class="profile-section"><h3>新建频道</h3>' +
+    '<label class="lab">频道名称<input class="field" id="ac-name" maxlength="24"></label>' +
+    '<label class="lab">频道简介<input class="field" id="ac-desc" maxlength="120"></label>' +
+    '<div style="margin-top:10px"><button class="btn primary" type="button" id="ac-go">新建频道</button></div></div>' +
+    '<div class="profile-section"><h3>现有频道</h3><table class="table"><tr><th>名称</th><th>简介</th><th>帖子</th><th>创建时间</th></tr>' +
+    (list || '<tr><td colspan="4" class="hint">暂无频道</td></tr>') + '</table></div>';
+}
+let announceImg = null;
+function htmlAnnounce() {
+  const a = data.announcement;
+  return '<div class="profile-section"><h3>发布公告（单条·新公告覆盖旧公告）</h3>' +
+    '<label class="lab">公告内容<textarea class="field" id="an-text" rows="5" maxlength="1000">' + FF.esc(a ? a.text : '') + '</textarea></label>' +
+    '<label class="lab">配图（可选）<input type="file" id="an-file" accept="image/png,image/jpeg,image/webp"></label>' +
+    '<div id="an-preview" class="thread-images">' + (a && a.image ? '<img src="' + FF.esc(a.image) + '" alt="当前公告图">' : '') + '</div>' +
+    '<div style="margin-top:10px"><button class="btn primary" type="button" id="an-go">发布公告</button>' +
+    (a ? '<span class="hint">　当前公告发布于 ' + FF.fmtTime(a.updatedAt) + '</span>' : '') + '</div></div>';
+}
+function htmlThreads() {
+  const list = (data.forumThreads || []).map(t =>
+    '<tr><td><a href="thread.html?id=' + FF.esc(t.id) + '" target="_blank">' + FF.esc(t.title) + '</a>' +
+      (t.pinned ? ' <span class="pin-tag">置顶:' + FF.esc(t.pinnedBy && t.pinnedBy.name || '') + '</span>' : '') +
+      (t.deleted ? ' <span class="hint">（已删除:' + FF.esc(t.deletedBy && t.deletedBy.name || '') + '）</span>' : '') + '</td>' +
+      '<td>' + FF.esc(t.channelName || '') + '</td><td>@' + FF.esc(t.author) + '</td><td>' + t.likes + '</td>' +
+      '<td>' + FF.fmtTime(t.createdAt) + '</td>' +
+      '<td><button class="btn" type="button" data-editthread="' + FF.esc(t.id) + '">编辑</button>' +
+      (t.deleted ? '' :
+        ' <button class="btn" type="button" data-act="threads/' + FF.esc(t.id) + '/delete" data-mode="trace" data-confirm="带痕删除？原位置显示【管理员已删除】，帖子打不开">带痕删除</button>' +
+        ' <button class="btn danger" type="button" data-act="threads/' + FF.esc(t.id) + '/delete" data-mode="purge" data-confirm="无痕删除？帖子与配图彻底移除，不可恢复">无痕删除</button>') +
+      '</td></tr>').join('');
+  return '<div class="profile-section"><h3>全部帖子（可编辑任意帖子）</h3>' +
+    '<table class="table"><tr><th>标题</th><th>频道</th><th>作者</th><th>赞</th><th>时间</th><th>操作</th></tr>' +
+    (list || '<tr><td colspan="6" class="hint">暂无帖子</td></tr>') + '</table></div>';
+}
+function htmlSystem() {
+  const c = data.config;
+  return '<div class="profile-section"><h3>审核策略</h3>' +
+    '<label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="cfg-users"' + (c.autoApproveUsers ? ' checked' : '') + '> 新注册账号自动通过审核</label>' +
+    '<label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="cfg-posts"' + (c.autoApprovePosts ? ' checked' : '') + '> 新怪谈投稿自动通过审核</label>' +
+    '<label class="lab">公告栏文字（聊天室侧栏显示）<textarea class="field" id="cfg-motd" rows="3" maxlength="300">' + FF.esc(c.motd) + '</textarea></label>' +
+    '<div style="margin-top:10px"><button class="btn primary" type="button" id="cfg-save">保存设置</button></div></div>' +
+    '<div class="profile-section"><h3>发布聊天室系统消息</h3>' +
+    '<textarea class="field" id="ann-text" rows="2" maxlength="500" placeholder="以「论坛管理」名义发送到公共聊天室"></textarea>' +
+    '<div style="margin-top:10px"><button class="btn primary" type="button" id="ann-go">发送消息</button></div></div>';
+}
+
+function render() {
+  document.getElementById('tab-title').textContent =
+    { overview: '概览', users: '用户档案审核', posts: '怪谈审核', messages: '聊天管理', channels: '频道管理', announce: '公告管理', threads: '帖子管理', system: '系统设置' }[tab];
+  panel.innerHTML = !data ? '<p class="hint">读取中…</p>' :
+    tab === 'overview' ? htmlOverview() : tab === 'users' ? htmlUsers() : tab === 'posts' ? htmlPosts() :
+    tab === 'messages' ? htmlMessages() : tab === 'channels' ? htmlChannels() : tab === 'announce' ? htmlAnnounce() :
+    tab === 'threads' ? htmlThreads() : htmlSystem();
+  if (tab === 'system') bindSystem();
+  if (tab === 'channels') bindChannels();
+  if (tab === 'announce') bindAnnounce();
+}
+function bindSystem() {
+  document.getElementById('cfg-save').onclick = async () => {
+    statusEl.textContent = '保存中…';
+    try {
+      await FF.api('/api/admin/config', { body: {
+        autoApproveUsers: document.getElementById('cfg-users').checked,
+        autoApprovePosts: document.getElementById('cfg-posts').checked,
+        motd: document.getElementById('cfg-motd').value
+      } });
+      statusEl.textContent = '设置已保存。';
+      await refresh();
+    } catch (err) { statusEl.textContent = err.message; }
+  };
+  document.getElementById('ann-go').onclick = async () => {
+    const text = document.getElementById('ann-text').value.trim();
+    if (!text) { statusEl.textContent = '请先填写公告内容。'; return; }
+    try { await FF.api('/api/admin/announce', { body: { text } }); document.getElementById('ann-text').value = ''; statusEl.textContent = '公告已发送到公共聊天室。'; }
+    catch (err) { statusEl.textContent = err.message; }
+  };
+}
+function bindChannels() {
+  document.getElementById('ac-go').onclick = async () => {
+    const name = document.getElementById('ac-name').value.trim();
+    if (!name) { statusEl.textContent = '请填写频道名称。'; return; }
+    try {
+      await FF.api('/api/admin/channels', { body: { name, desc: document.getElementById('ac-desc').value.trim() } });
+      statusEl.textContent = '频道已创建。'; await refresh();
+    } catch (err) { statusEl.textContent = err.message; }
+  };
+}
+function bindAnnounce() {
+  const file = document.getElementById('an-file');
+  announceImg = null;
+  file.onchange = async () => {
+    if (!file.files[0]) return;
+    try {
+      announceImg = await readImage(file.files[0], 2400);
+      document.getElementById('an-preview').innerHTML = '<img src="' + announceImg + '" alt="公告图预览">';
+      statusEl.textContent = '图片已就绪，点「发布公告」生效。';
+    } catch (err) { statusEl.textContent = err.message; }
+    file.value = '';
+  };
+  document.getElementById('an-go').onclick = async () => {
+    const text = document.getElementById('an-text').value.trim();
+    if (!text) { statusEl.textContent = '请填写公告内容。'; return; }
+    try {
+      await FF.api('/api/admin/announcement', { body: { text, image: announceImg } });
+      announceImg = null; statusEl.textContent = '公告已发布（覆盖旧公告）。'; await refresh();
+    } catch (err) { statusEl.textContent = err.message; }
+  };
+}
+function openThreadEdit(t) {
+  const users = data.users || [];
+  const isUserAuthor = !!t.authorId && t.authorId !== 'admin' && users.some(u => u.id === t.authorId);
+  const authorOptions = '<option value="keep"' + (!isUserAuthor && t.authorId !== 'admin' ? ' selected' : '') + '>保持当前（' + FF.esc(t.author) + '）</option>' +
+    '<option value="admin"' + (t.authorId === 'admin' ? ' selected' : '') + '>管理员</option>' +
+    users.map(u => '<option value="u:' + FF.esc(u.id) + '"' + (isUserAuthor && u.id === t.authorId ? ' selected' : '') + '>' + FF.esc(u.nickname) + '（玩家 ' + FF.esc(u.playerName) + '）</option>').join('') +
+    '<option value="custom">自定义网名…</option>';
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 12px;color:#ff5940">编辑帖子 · ' + FF.esc(t.title) + '</h3>' +
+    '<label class="lab">标题<input class="field" id="et-title" maxlength="120" value="' + FF.esc(t.title) + '"></label>' +
+    '<label class="lab">正文<textarea class="field" id="et-body" rows="10" maxlength="5000">' + FF.esc(t.body) + '</textarea></label>' +
+    '<label class="lab">移动到频道<select class="field" id="et-channel">' +
+      (data.channels || []).map(c => '<option value="' + FF.esc(c.id) + '"' + (c.id === t.channelId ? ' selected' : '') + '>' + FF.esc(c.name) + '</option>').join('') +
+    '</select></label>' +
+    '<label class="lab">发帖人信息（网名 / 头像取自所选档案）<select class="field" id="et-author">' + authorOptions + '</select></label>' +
+    '<label class="lab" id="et-custom-wrap" hidden>自定义网名<input class="field" id="et-author-custom" maxlength="24" value="' + FF.esc(t.author) + '"></label>' +
+    '<div style="margin-top:12px"><button class="btn primary" type="button" id="et-save">保存</button></div>' +
+    '<p class="status" id="et-status"></p>', true);
+  const sel = back.querySelector('#et-author');
+  const customWrap = back.querySelector('#et-custom-wrap');
+  sel.onchange = () => { customWrap.hidden = sel.value !== 'custom'; };
+  back.querySelector('#et-save').onclick = async () => {
+    const v = sel.value;
+    let authorMode = 'keep', authorId, author;
+    if (v === 'admin') authorMode = 'admin';
+    else if (v === 'custom') { authorMode = 'custom'; author = back.querySelector('#et-author-custom').value.trim(); }
+    else if (v.startsWith('u:')) { authorMode = 'user'; authorId = v.slice(2); }
+    try {
+      await FF.api('/api/admin/threads/' + encodeURIComponent(t.id) + '/edit', { body: {
+        title: back.querySelector('#et-title').value.trim(),
+        body: back.querySelector('#et-body').value.trim(),
+        channelId: back.querySelector('#et-channel').value,
+        authorMode, authorId, author
+      } });
+      back.querySelector('#et-status').textContent = '已保存。'; await refresh();
+    } catch (err) { back.querySelector('#et-status').textContent = err.message; }
+  };
+}
+/* ---------- 图片读取（与制卡工具 / me.html 同款） ---------- */
+async function readImage(file, maxEdge) {
+  if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024)
+    throw new Error('请选择 20 MB 以内的 PNG、JPG 或 WebP 图片。');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    if (!img.naturalWidth || !img.naturalHeight) throw new Error('这张图片无法打开。');
+    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    try {
+      const webp = canvas.toDataURL('image/webp', maxEdge >= 2000 ? 0.9 : 0.88);
+      if (webp.slice(0, 14) === 'data:image/webp') return webp;
+    } catch (e) {}
+    return canvas.toDataURL('image/png');
+  } finally { URL.revokeObjectURL(url); }
+}
+/* ---------- 档案编辑：文字 + 头像 / 人设卡 ---------- */
+function openUserEdit(u) {
+  const p = u.public || {}, a = u.archive || {};
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 8px;color:#ff5940;letter-spacing:2px">编辑用户档案 · ' + FF.esc(u.nickname) + '</h3>' +
+    '<label class="lab">网名（网站显示名）<input class="field" id="eu-nickname" maxlength="24" value="' + FF.esc(u.nickname || '') + '"></label>' +
+    '<div class="pf-uploads">' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">头像</div>' +
+        '<button type="button" class="pf-upload-box" id="eu-up-avatar-box"><img id="eu-up-avatar-img" src="' + FF.esc(u.avatar || '') + '"' + (u.avatar ? '' : ' hidden') + ' alt="头像预览"><span>点击更换头像</span></button>' +
+        '<input type="file" id="eu-up-avatar-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">点击图片选择文件</div></div>' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">人设卡</div>' +
+        '<button type="button" class="pf-upload-box card" id="eu-up-card-box"><img id="eu-up-card-img" src="' + FF.esc(u.card || '') + '"' + (u.card ? '' : ' hidden') + ' alt="设卡预览"><span>点击上传人设卡</span></button>' +
+        '<input type="file" id="eu-up-card-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">制卡工具导出 PNG 后上传</div></div>' +
+    '</div>' +
+    '<label class="lab">公开性别<input class="field" id="eu-gender" maxlength="12" value="' + FF.esc(p.gender || '') + '"></label>' +
+    '<label class="lab">公开年龄<input class="field" id="eu-age" maxlength="4" value="' + FF.esc(p.age || '') + '"></label>' +
+    '<label class="lab">个性签名<textarea class="field" id="eu-signature" rows="2" maxlength="60">' + FF.esc(p.signature || '') + '</textarea></label>' +
+    '<label class="lab">个人简介<textarea class="field" id="eu-intro" rows="4" maxlength="180">' + FF.esc(p.intro || '') + '</textarea></label>' +
+    '<label class="lab">真实姓名<input class="field" id="eu-realName" maxlength="24" value="' + FF.esc(a.realName || '') + '"></label>' +
+    '<label class="lab">真实性别<input class="field" id="eu-realGender" maxlength="12" value="' + FF.esc(a.realGender || '') + '"></label>' +
+    '<label class="lab">真实年龄<input class="field" id="eu-realAge" maxlength="12" value="' + FF.esc(a.realAge || '') + '"></label>' +
+    '<label class="lab">种族<input class="field" id="eu-species" maxlength="24" value="' + FF.esc(a.species || '') + '"></label>' +
+    '<label class="lab">身高<input class="field" id="eu-height" maxlength="12" value="' + FF.esc(a.height || '') + '"></label>' +
+    '<label class="lab">人物设定<textarea class="field" id="eu-history" rows="5" maxlength="1000">' + FF.esc(a.history || '') + '</textarea></label>' +
+    '<div style="margin-top:12px"><button class="btn primary" type="button" id="eu-save">保存</button></div>' +
+    '<p class="status" id="eu-status" role="status"></p>', true);
+  const g = id => back.querySelector('#' + id).value;
+  const status = () => back.querySelector('#eu-status');
+  const staged = { avatar: null, card: null };
+  function bindUpload(slot, boxId, fileId, imgId, maxEdge) {
+    const box = back.querySelector('#' + boxId), file = back.querySelector('#' + fileId);
+    const img = back.querySelector('#' + imgId);
+    box.onclick = () => file.click();
+    file.onchange = async () => {
+      if (!file.files[0]) return;
+      status.textContent = '正在读取' + (slot === 'avatar' ? '头像' : '人设卡') + '…';
+      try {
+        const dataUrl = await readImage(file.files[0], maxEdge);
+        staged[slot] = dataUrl;
+        img.src = dataUrl; img.hidden = false;
+        status.textContent = '图片已就绪，点「保存」生效。';
+      } catch (err) { status.textContent = err.message; }
+      file.value = '';
+    };
+  }
+  bindUpload('avatar', 'eu-up-avatar-box', 'eu-up-avatar-file', 'eu-up-avatar-img', 1024);
+  bindUpload('card', 'eu-up-card-box', 'eu-up-card-file', 'eu-up-card-img', 4800);
+  back.querySelector('#eu-save').onclick = async () => {
+    const btn = back.querySelector('#eu-save');
+    btn.disabled = true;
+    status.textContent = '保存中…';
+    try {
+      await FF.api('/api/admin/users/' + u.id + '/edit', { body: {
+        nickname: g('eu-nickname'),
+        public: { gender: g('eu-gender'), age: g('eu-age'), signature: g('eu-signature'), intro: g('eu-intro') },
+        archive: { realName: g('eu-realName'), realGender: g('eu-realGender'), realAge: g('eu-realAge'), species: g('eu-species'), height: g('eu-height'), history: g('eu-history') }
+      } });
+      for (const slot of ['avatar', 'card']) {
+        if (staged[slot]) await FF.api('/api/admin/image', { body: { kind: 'users', id: u.id, slot, dataUrl: staged[slot] } });
+      }
+      staged.avatar = staged.card = null;
+      status.textContent = '已保存。';
+      await refresh();
+      back.remove();
+    } catch (err) { status.textContent = err.message; }
+    finally { btn.disabled = false; }
+  };
+}
+function openPostEdit(p) {
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 8px;color:#ff5940;letter-spacing:2px">编辑怪谈档案 · ' + FF.esc(p.name) + '</h3>' +
+    '<div class="pf-uploads">' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">怪谈卡面</div>' +
+        '<button type="button" class="pf-upload-box card" id="ep-up-card-box"><img id="ep-up-card-img" src="' + FF.esc(p.card || '') + '"' + (p.card ? '' : ' hidden') + ' alt="卡面预览"><span>点击上传卡面</span></button>' +
+        '<input type="file" id="ep-up-card-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">制卡工具导出 PNG 后上传</div></div>' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">形象 / 立绘</div>' +
+        '<button type="button" class="pf-upload-box" id="ep-up-portrait-box"><img id="ep-up-portrait-img" src="' + FF.esc(p.portrait || '') + '"' + (p.portrait ? '' : ' hidden') + ' alt="形象预览"><span>点击上传形象</span></button>' +
+        '<input type="file" id="ep-up-portrait-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">点击图片选择文件</div></div>' +
+    '</div>' +
+    '<label class="lab">怪谈名称<input class="field" id="ep-name" maxlength="60" value="' + FF.esc(p.name) + '"></label>' +
+    '<label class="lab">类型<select class="field" id="ep-type"><option value="combat"' + (p.type === 'combat' ? ' selected' : '') + '>【战斗】</option><option value="puzzle"' + (p.type === 'puzzle' ? ' selected' : '') + '>【谜题】</option></select></label>' +
+    '<label class="lab">怪谈影响范围<textarea class="field" id="ep-area" rows="2" maxlength="160">' + FF.esc(p.area) + '</textarea></label>' +
+    '<label class="lab">怪谈机制<textarea class="field" id="ep-mechanism" rows="4" maxlength="300">' + FF.esc(p.mechanism || '') + '</textarea></label>' +
+    '<label class="lab">怪谈对策 / 谜底<textarea class="field" id="ep-counter" rows="4" maxlength="300">' + FF.esc(p.countermeasures || '') + '</textarea></label>' +
+    '<label class="lab">公共创作素材<select class="field" id="ep-sharing"><option value="yes"' + (p.sharing === 'yes' ? ' selected' : '') + '>是（暂未处理）</option><option value="no"' + (p.sharing === 'no' ? ' selected' : '') + '>否（已处理，仅归档）</option></select></label>' +
+    '<label class="lab">投稿玩家<select class="field" id="ep-author"><option value=""' + (!p.authorId ? ' selected' : '') + '>匿名（无账号）</option>' +
+      (data.users || []).map(u => '<option value="' + FF.esc(u.id) + '"' + (u.id === p.authorId ? ' selected' : '') + '>' + FF.esc((u.nickname || '') + (u.playerName ? '（' + u.playerName + '）' : '')) + '</option>').join('') +
+    '</select></label>' +
+    '<label class="lab">设主（卡面右下角标注）<input class="field" id="ep-owner" maxlength="24" value="' + FF.esc(p.owner || '') + '"></label>' +
+    '<div style="margin-top:12px"><button class="btn primary" type="button" id="ep-save">保存</button></div>' +
+    '<p class="status" id="ep-status" role="status"></p>', true);
+  const g = id => back.querySelector('#' + id).value;
+  const status = () => back.querySelector('#ep-status');
+  const staged = { card: null, portrait: null };
+  function bindUpload(slot, boxId, fileId, imgId, label, maxEdge) {
+    const box = back.querySelector('#' + boxId), file = back.querySelector('#' + fileId);
+    const img = back.querySelector('#' + imgId);
+    box.onclick = () => file.click();
+    file.onchange = async () => {
+      if (!file.files[0]) return;
+      status.textContent = '正在读取' + label + '…';
+      try {
+        const dataUrl = await readImage(file.files[0], maxEdge);
+        staged[slot] = dataUrl;
+        img.src = dataUrl; img.hidden = false;
+        status.textContent = '图片已就绪，点「保存」生效。';
+      } catch (err) { status.textContent = err.message; }
+      file.value = '';
+    };
+  }
+  bindUpload('card', 'ep-up-card-box', 'ep-up-card-file', 'ep-up-card-img', '卡面', 4800);
+  bindUpload('portrait', 'ep-up-portrait-box', 'ep-up-portrait-file', 'ep-up-portrait-img', '形象', 2048);
+  back.querySelector('#ep-save').onclick = async () => {
+    const btn = back.querySelector('#ep-save');
+    btn.disabled = true;
+    status.textContent = '保存中…';
+    try {
+      await FF.api('/api/admin/posts/' + p.id + '/edit', { body: { name: g('ep-name'), type: g('ep-type'), area: g('ep-area'), mechanism: g('ep-mechanism'), countermeasures: g('ep-counter'), sharing: g('ep-sharing'), authorId: g('ep-author') || null, owner: g('ep-owner') } });
+      for (const slot of ['card', 'portrait']) {
+        if (staged[slot]) await FF.api('/api/admin/image', { body: { kind: 'posts', id: p.id, slot, dataUrl: staged[slot] } });
+      }
+      staged.card = staged.portrait = null;
+      status.textContent = '已保存。';
+      await refresh();
+      back.remove();
+    } catch (err) { status.textContent = err.message; }
+    finally { btn.disabled = false; }
+  };
+}
+
+async function refresh() {
+  try {
+    data = await FF.api('/api/admin/overview');
+    data.announcement = (await FF.api('/api/home')).announcement;
+    data.channels = await FF.api('/api/channels');
+    data.forumThreads = await FF.api('/api/admin/threads');
+    render();
+  }
+  catch (err) {
+    if (/管理员/.test(err.message)) { showGate(); return; }
+    statusEl.textContent = err.message;
+  }
+}
+panel.addEventListener('click', async e => {
+  const vw = e.target.closest('[data-view]');
+  if (vw) { viewImage(vw.dataset.view, vw.dataset.viewTitle || '查看'); return; }
+  const eu = e.target.closest('[data-edituser]');
+  if (eu) { const u = data.users.find(x => x.id === eu.dataset.edituser); if (u) openUserEdit(u); return; }
+  const ep = e.target.closest('[data-editpost]');
+  if (ep) { const p = data.posts.find(x => x.id === ep.dataset.editpost); if (p) openPostEdit(p); return; }
+  const et = e.target.closest('[data-editthread]');
+  if (et) { const t = (data.forumThreads || []).find(x => x.id === et.dataset.editthread); if (t) openThreadEdit(t); return; }
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  if (btn.dataset.confirm && !confirm(btn.dataset.confirm)) return;
+  btn.disabled = true;
+  statusEl.textContent = '处理中…';
+  const body = btn.dataset.mode ? { mode: btn.dataset.mode } : {};
+  try { await FF.api('/api/admin/' + btn.dataset.act, { method: 'POST', body }); statusEl.textContent = '已处理。'; await refresh(); }
+  catch (err) { statusEl.textContent = err.message; btn.disabled = false; }
+});
+document.getElementById('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-t]');
+  if (!b) return;
+  tab = b.dataset.t;
+  document.querySelectorAll('#tabs button[data-t]').forEach(x => x.classList.toggle('active', x === b));
+  render();
+});
+document.getElementById('a-logout').onclick = async () => { await FF.api('/api/admin/logout', { method: 'POST', body: {} }); location.reload(); };
+
+function showGate() {
+  document.getElementById('zone').hidden = true;
+  document.getElementById('gate').hidden = false;
+}
+document.getElementById('a-go').onclick = async () => {
+  const status = document.getElementById('a-status');
+  status.textContent = '正在登入…';
+  try {
+    await FF.api('/api/admin/login', { body: { username: document.getElementById('a-user').value, password: document.getElementById('a-pass').value } });
+    location.reload();
+  } catch (err) { status.textContent = err.message; }
+};
+(async () => {
+  await FF.renderHeader();
+  const s = await FF.session();
+  if (!s.admin) { showGate(); return; }
+  document.getElementById('gate').hidden = true;
+  document.getElementById('zone').hidden = false;
+  await refresh();
+  FF.sse({ message: () => { if (tab === 'messages' || tab === 'overview') refresh(); }, post: () => refresh(), user: () => refresh() });
+})();
+</script>
+</body>
+</html>

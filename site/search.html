@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 搜索</title>
+<link rel="stylesheet" href="/assets/forum.css">
+</head>
+<body data-section="search" data-section-name="搜索">
+<header id="site-header"></header>
+
+<div class="layout single">
+  <main>
+    <h1 class="page-title">搜索<span class="en">SEARCH</span></h1>
+    <form class="search-box" id="search-form">
+      <input class="field" id="q" maxlength="80" placeholder="搜索帖子与用户…" autocomplete="off">
+      <button class="btn primary" type="submit">搜索</button>
+    </form>
+    <p class="status" id="status" role="status"></p>
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">帖子</span><span class="bar-sub" id="tc"></span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><div id="threads"></div></div>
+    </section>
+    <section class="win">
+      <div class="win-bar"><span class="bar-title">用户</span><span class="bar-sub" id="uc"></span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><div id="users"></div></div>
+    </section>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+function hl(s, q) {
+  const out = FF.esc(s);
+  if (!q) return out;
+  const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig');
+  return out.replace(re, '<mark>$1</mark>');
+}
+function userCard(u, q) {
+  const avatar = u.avatar
+    ? '<img class="su-avatar" loading="lazy" decoding="async" src="' + FF.esc(u.avatar) + '" alt="头像">'
+    : '<span class="su-avatar avatar-ph">' + FF.esc(String(u.nickname || '?').slice(0, 1)) + '</span>';
+  return '<a class="su-card" href="profile.html?id=' + FF.esc(u.id) + '">' + avatar +
+    '<span class="su-main"><b>' + hl(u.nickname, q) + '</b>' +
+    '<span class="su-sub">玩家 ' + hl(u.playerName || '（匿名）', q) + (u.signature ? ' · ' + hl(u.signature, q) : '') + '</span></span>' +
+    '<span class="su-go">查看主页 →</span></a>';
+}
+function render(d) {
+  const q = d.q;
+  $('tc').textContent = d.threads.length + ' HITS';
+  $('uc').textContent = d.users.length + ' HITS';
+  $('threads').innerHTML = d.threads.length ? '<ul class="thread-list">' + d.threads.map(t =>
+    '<li class="thread-row"><div class="t-main"><a class="t-title" href="thread.html?id=' + FF.esc(t.id) + '">' + hl(t.title, q) + '</a>' +
+    '<div class="t-sub">' + (t.authorId
+      ? '<a href="profile.html?id=' + FF.esc(t.authorId) + '" class="author-link">@' + FF.esc(t.author) + '</a>'
+      : '@' + FF.esc(t.author)) + ' · ' + FF.fmtTime(t.createdAt) + ' · 回复 ' + t.replyCount + '</div>' +
+    '<div class="hint">' + hl(t.body.slice(0, 160), q) + '</div></div></li>').join('') + '</ul>'
+    : '<p class="hint">没有匹配的帖子。</p>' + (Math.random() < 0.35 ? '<p class="search-echo">你搜的东西，也在搜你。</p>' : '');
+  $('users').innerHTML = d.users.length ? '<div class="su-list">' + d.users.map(u => userCard(u, q)).join('') + '</div>'
+    : '<p class="hint">没有匹配的用户。</p>';
+}
+$('search-form').onsubmit = async e => {
+  e.preventDefault();
+  const q = $('q').value.trim();
+  if (!q) return;
+  $('status').textContent = '搜索中…';
+  try { render(await FF.api('/api/search?q=' + encodeURIComponent(q))); $('status').textContent = ''; }
+  catch (err) { $('status').textContent = err.message; }
+};
+(async () => {
+  await FF.renderHeader();
+  const preset = new URLSearchParams(location.search).get('q');
+  if (preset) { $('q').value = preset; $('search-form').requestSubmit(); }
+})();
+</script>
+</body>
+</html>

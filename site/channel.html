@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/assets/openeye.png">
+<title>怪啖论坛 · 频道</title>
+<link rel="stylesheet" href="/assets/forum.css">
+</head>
+<body data-section="channel" data-section-name="频道">
+<header id="site-header"></header>
+
+<div class="layout single">
+  <main>
+    <h1 class="page-title" id="chan-title">频道<span class="en">CHANNEL</span></h1>
+    <p class="hint" id="chan-desc"></p>
+    <div class="toolbar-strip">
+      <button class="btn primary" type="button" id="new-thread">发起新帖</button>
+      <span class="spacer"></span>
+      <a class="btn" href="home.html">回主页</a>
+    </div>
+    <div id="thread-list"></div>
+    <p class="status" id="status" role="status"></p>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const cid = new URLSearchParams(location.search).get('id') || '';
+let me = null;
+let images = [];
+
+function readImage(file, maxEdge) {
+  return new Promise((resolve, reject) => {
+    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024)
+      return reject(new Error('请选择 20 MB 以内的 PNG / JPG / WebP 图片。'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        try {
+          const webp = c.toDataURL('image/webp', maxEdge >= 2000 ? 0.9 : 0.88);
+          if (webp.slice(0, 14) === 'data:image/webp') return resolve(webp);
+        } catch (e) {}
+        resolve(c.toDataURL('image/png'));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法打开。')); };
+    img.src = url;
+  });
+}
+
+/* 匿名帖与 unknown 组角色（匿名/档案馆等）主页不可点击；??? 例外（陷阱页） */
+function userAttr(t) {
+  return (t.authorId && t.authorId !== 'admin' && !t.anon && !t.authorNoProfile) ? ' data-user="' + FF.esc(t.authorId) + '"' : '';
+}
+function renderThreads(data) {
+  $('chan-title').innerHTML = FF.esc(data.channel.name) + '<span class="en">' + data.threads.length + ' POSTS</span>';
+  $('chan-desc').textContent = data.channel.desc || '';
+  document.title = data.channel.name + ' · 怪啖论坛';
+  const list = $('thread-list');
+  list.innerHTML = data.threads.length ? '<ul class="thread-list">' + data.threads.map(t => {
+    if (t.deleted) {
+      return '<li class="thread-row deleted">' +
+        '<div class="t-main"><span class="del-mark">' + FF.esc(t.title) + '</span>' +
+        '<div class="t-sub">该帖子已被删除</div></div></li>';
+    }
+    const avatar = t.avatar
+      ? '<img class="tr-avatar" loading="lazy" decoding="async" src="' + FF.esc(t.avatar) + '" alt="头像"' + userAttr(t) + '>'
+      : '<span class="tr-avatar ph"' + userAttr(t) + '>' + FF.esc(String(t.author || '?').slice(0, 1)) + '</span>';
+    const author = (t.authorId && t.authorId !== 'admin')
+      ? '<a class="tr-author" href="profile.html?id=' + FF.esc(t.authorId) + '">' + FF.esc(t.author) + '</a>'
+      : '<span class="tr-author">' + FF.esc(t.author) + '</span>';
+    const excerpt = String(t.body || '').replace(/\s+/g, ' ').trim();
+    return '<li class="thread-row' + (t.pinned ? ' pinned' : '') + '">' +
+      '<a class="tr-avatar-link" href="' + (t.authorId && t.authorId !== 'admin' ? 'profile.html?id=' + FF.esc(t.authorId) : 'javascript:void(0)') + '">' + avatar + '</a>' +
+      '<div class="t-main">' +
+        '<a class="t-title" href="thread.html?id=' + FF.esc(t.id) + '">' + FF.esc(t.title) +
+          (t.pinned ? ' <span class="pin-tag">〔置顶:' + FF.esc(t.pinnedBy && t.pinnedBy.name || '') + '〕</span>' : '') +
+          (t.locked ? ' <span class="lock-tag">〔禁止回复〕</span>' : '') + '</a>' +
+        '<div class="tr-excerpt">' + FF.esc(excerpt) + '</div>' +
+        '<div class="t-sub">' + author + ' · ' + FF.fmtTime(t.createdAt) + '</div>' +
+      '</div>' +
+      '<div class="t-stats"><span>♥ ' + t.likes + '</span><span>回复 ' + t.replyCount + '</span></div>' +
+    '</li>';
+  }).join('') + '</ul>' : '<p class="hint">这个频道还没有帖子，来发第一帖吧。</p>';
+}
+
+function openNewThread() {
+  if (!me || !me.user) { $('status').textContent = '请先登入并创建账号后再发帖。'; return; }
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 12px;color:#ff5940">发起新帖</h3>' +
+    '<label class="lab">标题<input class="field" id="nt-title" maxlength="120"></label>' +
+    '<label class="lab">正文<textarea class="field" id="nt-body" rows="8" maxlength="5000"></textarea></label>' +
+    '<label class="lab">配图（最多 3 张，可选）<input type="file" id="nt-file" accept="image/png,image/jpeg,image/webp" multiple></label>' +
+    '<label class="lab" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="nt-anon"> 匿名发布（不显示你的网名与头像）</label>' +
+    '<div id="nt-preview" class="thread-images"></div>' +
+    '<div style="margin-top:12px"><button class="btn primary" type="button" id="nt-go">发布</button></div>' +
+    '<p class="status" id="nt-status"></p>', true);
+  const files = back.querySelector('#nt-file');
+  images = [];
+  files.onchange = async () => {
+    images = [];
+    for (const f of Array.from(files.files).slice(0, 3)) {
+      try { images.push(await readImage(f, 4800)); }
+      catch (e) { back.querySelector('#nt-status').textContent = e.message; }
+    }
+    back.querySelector('#nt-preview').innerHTML = images.map(x => '<img src="' + x + '" alt="预览">').join('');
+  };
+  back.querySelector('#nt-go').onclick = async () => {
+    const title = back.querySelector('#nt-title').value.trim();
+    const body = back.querySelector('#nt-body').value.trim();
+    if (!title || !body) { back.querySelector('#nt-status').textContent = '请填写标题和正文。'; return; }
+    const btn = back.querySelector('#nt-go'); btn.disabled = true;
+    try {
+      await FF.api('/api/channels/' + encodeURIComponent(cid) + '/threads', {
+        body: { title, body, anon: back.querySelector('#nt-anon').checked, image: images[0], image2: images[1], image3: images[2] }
+      });
+      back.remove(); await load();
+    } catch (e) { back.querySelector('#nt-status').textContent = e.message; btn.disabled = false; }
+  };
+}
+
+function eatenTakeover() {
+  if (document.querySelector('.eaten-veil')) return;
+  const veil = document.createElement('div');
+  veil.className = 'eaten-veil';
+  veil.innerHTML = '<div class="eaten-404">404</div><div class="eaten-line">频道好像被吃掉了</div>';
+  document.body.appendChild(veil);
+  veil.classList.add('eaten-shake');
+  setTimeout(() => veil.classList.remove('eaten-shake'), 900);
+}
+async function load() {
+  try { renderThreads(await FF.api('/api/channels/' + encodeURIComponent(cid) + '/threads')); }
+  catch (err) {
+    if (/未找到/.test(err.message)) eatenTakeover();
+    else $('status').textContent = err.message;
+  }
+}
+
+(async () => {
+  me = await FF.session();
+  await FF.renderHeader();
+  $('new-thread').onclick = openNewThread;
+  if (!cid) { $('status').textContent = '缺少频道参数。'; return; }
+  await load();
+  FF.sse({ thread: load, threadDelete: load, reply: load, like: load });
+})();
+</script>
+</body>
+</html>
