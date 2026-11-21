@@ -53,17 +53,12 @@ function userCard(u, q) {
     '<span class="su-go">查看主页 →</span></a>';
 }
 /* 「你可能认识的人」：同玩家 → 同阵营 → 其他，固定一行 */
-const WHY_TEXT = { samePlayer: '同玩家', sameFaction: '同阵营', other: '其他' };
-const FACTION_TEXT = { forum: '怪谈侦探', office: '异常对策课' };
 function suggestCard(u) {
   const avatar = u.avatar
     ? '<img class="sg-avatar" loading="lazy" decoding="async" src="' + FF.esc(u.avatar) + '" alt="头像">'
     : '<span class="sg-avatar avatar-ph">' + FF.esc(String(u.nickname || '?').slice(0, 1)) + '</span>';
   return '<a class="sg-card" href="profile.html?id=' + FF.esc(u.id) + '">' + avatar +
-    '<span class="sg-main"><b>' + FF.esc(u.nickname) + '</b>' +
-    '<span class="sg-sub">@' + FF.esc(u.playerName || '匿名') + '</span>' +
-    '<span class="sg-faction">' + (FACTION_TEXT[u.faction] || '') + '</span></span>' +
-    '<span class="sg-why">' + (WHY_TEXT[u.why] || '') + '</span></a>';
+    '<span class="sg-main"><b>' + FF.esc(u.nickname) + '</b></span></a>';
 }
 async function loadSuggest() {
   try {
