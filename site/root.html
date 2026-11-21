@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" type="image/webp" href="/assets/openeye.webp">
+<title>ROOT · 服务器监控</title>
+<link rel="stylesheet" href="/assets/forum.css">
+<style>
+/* ---------- root 监控页专用（与论坛页面隔离：无站点导航、无 SSE） ---------- */
+.root-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 20px 0 14px; }
+.root-head h1 { margin: 0; }
+.root-head .spacer { flex: 1; }
+.meter { height: 16px; background: #0b0d0e; border: 1px solid #333; margin-top: 4px; position: relative; overflow: hidden; }
+.meter i { position: absolute; top: 0; left: 0; bottom: 0; width: 0; background: linear-gradient(180deg, #ff5940, #a02c20); transition: width .6s; }
+.meter.low i { background: linear-gradient(180deg, #1cb8c9, #087481); }
+.meter.warn i { background: linear-gradient(180deg, #ffb020, #a06a10); }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 4px 18px; margin-top: 12px; }
+.kv div { color: var(--dim, #888); font-size: 12px; }
+.kv b { color: var(--ink, #ddd); font-weight: normal; }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding: 8px 2px 0; }
+.bars .col { flex: 1; display: flex; align-items: flex-end; gap: 2px; height: 100%; }
+.bars .col i { flex: 1; min-height: 1px; background: var(--red, #ed3828); display: block; }
+.bars .col i.uv { background: var(--cyan, #087481); }
+.bars-x { display: flex; gap: 3px; margin-top: 4px; }
+.bars-x span { flex: 1; text-align: center; font-size: 10px; color: var(--dim, #888); }
+.legend { margin-top: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; vertical-align: -1px; margin-right: 4px; }
+.top2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 720px) { .top2 { grid-template-columns: 1fr; } }
+.top2 h3 { margin: 0 0 8px; letter-spacing: 2px; }
+.top-list { list-style: none; margin: 0; padding: 0; }
+.top-list li { display: flex; gap: 8px; align-items: center; padding: 3px 0; font-size: 13px; }
+.top-list .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-list .num { color: var(--dim, #888); }
+.top-list .bg { height: 12px; background: #0b0d0e; border: 1px solid #333; flex: 0 0 38%; position: relative; overflow: hidden; }
+.top-list .bg i { position: absolute; top: 0; left: 0; bottom: 0; background: #7a2b22; }
+.filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.filter-row .field { width: 170px; }
+.pager { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+.table td, .table th { font-size: 13px; padding: 6px 8px; }
+.ref-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+</style>
+
+<body data-section="root" data-section-name="ROOT 监控">
+
+<!-- 登入门（独立 root 密码，与论坛管理员无关） -->
+<div class="auth-win" id="gate" hidden>
+  <h1>ROOT 登入</h1>
+  <p class="kicker cool">SERVER MONITOR / FANTA FORUM</p>
+  <label class="lab">Root 密码<input class="field" id="r-pass" type="password" autocomplete="current-password"></label>
+  <div class="actions"><button class="btn primary" type="button" id="r-go">进入监控</button></div>
+  <p class="status" id="r-status" role="status"></p>
+</div>
+
+<div class="layout single" id="zone" hidden>
+  <main>
+    <div class="root-head">
+      <h1 class="page-title">服务器监控<span class="en">ROOT / SERVER MONITOR</span></h1>
+      <span class="hint" id="clock">--:--:--</span>
+      <span class="spacer"></span>
+      <button class="btn" type="button" id="btn-refresh">刷新</button>
+      <button class="btn" type="button" id="btn-pass">改密码</button>
+      <button class="btn ghost" type="button" id="btn-out">退出</button>
+    </div>
+
+    <div class="stat-row" style="margin-bottom:16px">
+      <div class="stat"><b id="c-cpu">—</b><span>CPU %</span></div>
+      <div class="stat"><b id="c-mem">—</b><span>内存 %</span></div>
+      <div class="stat"><b id="c-disk">—</b><span>磁盘 %</span></div>
+      <div class="stat"><b id="c-down">—</b><span>下行</span></div>
+      <div class="stat"><b id="c-up">—</b><span>上行</span></div>
+      <div class="stat"><b id="c-online">—</b><span>在线 / 5分钟</span></div>
+    </div>
+
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">系统资源</span><span class="bar-sub">HARDWARE</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body" id="hw"><p class="hint">读取中…</p></div>
+    </section>
+
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">访问概览</span><span class="bar-sub" id="v-day-sub">—</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body" id="visit-today"><p class="hint">读取中…</p></div>
+    </section>
+
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">近 7 天趋势</span><span class="bar-sub">PV / UV</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body" id="visit-trend"><p class="hint">读取中…</p></div>
+    </section>
+
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">来源与热点</span><span class="bar-sub">GEO / TOP PAGES</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><div class="top2" id="tops"><p class="hint">读取中…</p></div></div>
+    </section>
+
+    <section class="win">
+      <div class="win-bar"><span class="bar-title">浏览记录明细</span><span class="bar-sub">VISIT LOG</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body">
+        <div class="filter-row">
+          <select class="field" id="f-day" style="width:150px"></select>
+          <input class="field" id="f-ip" placeholder="按 IP 筛选" maxlength="40">
+          <input class="field" id="f-p" placeholder="按页面筛选" maxlength="60">
+          <button class="btn" type="button" id="f-go">查询</button>
+          <button class="btn ghost" type="button" id="f-reset">重置</button>
+        </div>
+        <div id="log-box"><p class="hint">读取中…</p></div>
+        <div class="pager" id="pager"></div>
+      </div>
+    </section>
+
+    <p class="status" id="status" role="status"></p>
+    <p class="hint" style="margin-top:8px" id="upd-hint"></p>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+/* root 监控页：与论坛管理后台隔离，独立 root 会话。
+ * 不用 FF.renderHeader（不注入论坛导航）；时间用真实时钟（不用站点 -17 纪元）。
+ * 全部数据靠轮询（硬件 4s / 访问 10s），不经 SSE——/api/events 是公开的，不能带访客数据。
+ */
+const $ = id => document.getElementById(id);
+const statusEl = $('status');
+const pad = n => String(n).padStart(2, '0');
+const timers = { stats: null, visits: null };
+let logQuery = { day: '', ip: '', p: '', page: 1 };
+
+/* ---------- 格式化 ---------- */
+function nowStr() { const d = new Date(); return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
+function timeStr(ts) { const d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
+function fmtBytes(n) {
+  if (n == null || !isFinite(n)) return '—';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0, v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i ? v.toFixed(1) : Math.round(v)) + ' ' + u[i];
+}
+function fmtDur(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+  return (d ? d + '天' : '') + ((h || d) ? h + '时' : '') + m + '分';
+}
+const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
+/* ---------- 硬件面板 ---------- */
+function meter(label, pct, cls) {
+  const c = cls !== undefined ? cls : (pct >= 90 ? '' : pct >= 70 ? 'warn' : 'low');
+  return '<div style="margin-top:10px"><span class="hint">' + FF.esc(label) + '</span> <b style="color:#f0d1c6">' + pct + '%</b>' +
+    '<div class="meter ' + c + '"><i style="width:' + clamp(pct, 0, 100) + '%"></i></div></div>';
+}
+function renderStats(d) {
+  $('c-cpu').textContent = d.cpu.pct.toFixed(1);
+  $('c-mem').textContent = d.mem.pct.toFixed(1);
+  $('c-disk').textContent = d.disk ? d.disk.pct.toFixed(1) : '—';
+  $('c-down').textContent = d.net.src ? fmtBytes(d.net.rxRate) + '/s' : '—';
+  $('c-up').textContent = d.net.src ? fmtBytes(d.net.txRate) + '/s' : '—';
+  $('c-online').textContent = d.visit.online;
+  $('hw').innerHTML =
+    meter('CPU 占用 · ' + FF.esc((d.cpu.cores || '?') + ' 核 ' + (d.cpu.model || '')), d.cpu.pct) +
+    meter('内存占用 · 可用 ' + fmtBytes(d.mem.avail) + ' / 共 ' + fmtBytes(d.mem.total) + '，本进程 ' + fmtBytes(d.mem.rss), d.mem.pct) +
+    (d.disk
+      ? meter('磁盘占用（data 所在分区） · 剩余 ' + fmtBytes(d.disk.free) + ' / 共 ' + fmtBytes(d.disk.total), d.disk.pct)
+      : '<p class="hint">磁盘信息不可用。</p>') +
+    '<div class="kv">' +
+    '<div>网速来源：<b>' + (d.net.src === 'proc' ? '/proc/net/dev' : d.net.src === 'netstat' ? 'netstat -e（近似）' : '不可用') + '</b></div>' +
+    '<div>本次启动收 / 发：<b>' + fmtBytes(d.net.sinceRx) + ' / ' + fmtBytes(d.net.sinceTx) + '</b></div>' +
+    '<div>系统运行：<b>' + fmtDur(d.up.sys) + '</b>　Node 进程：<b>' + fmtDur(d.up.proc) + '</b></div>' +
+    '<div>今日访问：<b>' + d.visit.pv + ' 次 / ' + d.visit.uv + ' IP · 在线 ' + d.visit.online + '</b></div>' +
+    '<div>SSE 连接：<b>' + (d.sse == null ? '—' : d.sse) + '</b></div>' +
+    '<div>数据文件：<b>db.json ' + fmtBytes(d.files.db) + ' · visits.json ' + fmtBytes(d.files.visits) + '</b></div>' +
+    '<div>系统：<b>' + FF.esc(d.sys.platform + ' ' + d.sys.release + ' · ' + d.sys.arch) + '</b></div>' +
+    '<div>Node：<b>' + FF.esc(d.sys.node) + '</b>　主机：<b>' + FF.esc(d.sys.host) + '</b></div>' +
+    '<div>CPU 负载：<b>' + FF.esc((d.cpu.load || []).join(' / ')) + '</b></div>' +
+    '</div>';
+  $('upd-hint').textContent = '硬件数据更新于 ' + nowStr() + '（每 4 秒自动刷新；网速为 5 秒采样差值）';
+}
+
+/* ---------- 访问面板 ---------- */
+const chip = (label, val) => '<div class="stat"><b>' + val + '</b><span>' + label + '</span></div>';
+function bars24(hourly) {
+  const max = Math.max(1, ...hourly);
+  const now = new Date().getHours();
+  let cells = '', labels = '';
+  for (let h = 0; h < 24; h++) {
+    cells += '<div class="col" title="' + h + ' 点：' + hourly[h] + ' 次">' +
+      '<i style="height:' + Math.round(hourly[h] / max * 100) + '%' + (h === now ? ';background:var(--red-hot,#ff5940)' : '') + '"></i></div>';
+    labels += '<span>' + (h % 6 === 0 || h === 23 ? h + '时' : '') + '</span>';
+  }
+  return '<div class="bars">' + cells + '</div><div class="bars-x">' + labels + '</div>';
+}
+function trend(t) {
+  const max = Math.max(1, ...t.map(x => x.pv));
+  let cells = '', labels = '';
+  for (const x of t) {
+    cells += '<div class="col" title="' + x.day + '：PV ' + x.pv + ' / UV ' + x.uv + '">' +
+      '<i style="height:' + Math.round(x.pv / max * 100) + '%"></i>' +
+      '<i class="uv" style="height:' + Math.round(x.uv / max * 100) + '%"></i></div>';
+    labels += '<span>' + x.day.slice(5) + '</span>';
+  }
+  return '<div class="bars">' + cells + '</div><div class="bars-x">' + labels + '</div>' +
+    '<p class="legend hint"><i style="background:var(--red,#ed3828)"></i>PV　<i style="background:var(--cyan,#087481)"></i>UV（柱高按 7 天内 PV 峰值归一）</p>';
+}
+function topListHtml(list) {
+  const max = Math.max(1, ...list.map(x => x.v));
+  return '<ul class="top-list">' + (list.length ? list.map(x =>
+    '<li><span class="name" title="' + FF.esc(x.k) + '">' + FF.esc(x.k) + '</span>' +
+    '<span class="bg"><i style="width:' + Math.round(x.v / max * 100) + '%"></i></span>' +
+    '<span class="num">' + x.v + '</span></li>').join('')
+    : '<li class="hint">（暂无数据）</li>') + '</ul>';
+}
+function refDisp(r) {
+  try { const u = new URL(r); return FF.esc(u.host + (u.pathname === '/' ? '' : u.pathname)); }
+  catch { return FF.esc(String(r).slice(0, 40)); }
+}
+function renderDayOptions(days, cur) {
+  const t = new Date();
+  const tk = t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate());
+  const list = days.includes(tk) ? days : [tk].concat(days);
+  $('f-day').innerHTML = list.map(x =>
+    '<option value="' + x + '"' + (x === cur ? ' selected' : '') + '>' + (x === tk ? '今天 ' : '') + x + '</option>').join('');
+}
+function renderLog(log) {
+  $('log-box').innerHTML = '<table class="table">' +
+    '<tr><th>时间</th><th>IP</th><th>归属地</th><th>页面</th><th>来源</th><th>设备</th><th>浏览器</th></tr>' +
+    (log.list.length ? log.list.map(x =>
+      '<tr><td class="hint">' + timeStr(x.t) + '</td>' +
+      '<td>' + FF.esc(x.ip) + '</td>' +
+      '<td>' + (x.g ? FF.esc(x.g) : '<span class="hint">未知</span>') + '</td>' +
+      '<td><a href="/' + FF.esc(x.p) + '" target="_blank" rel="noopener">' + FF.esc(x.p) + '</a></td>' +
+      '<td class="hint ref-cell">' + (x.r ? refDisp(x.r) : '直接打开') + '</td>' +
+      '<td>' + FF.esc((x.d || '?') + '·' + (x.o || '?')) + '</td>' +
+      '<td>' + FF.esc(x.b || '?') + '</td></tr>').join('')
+    : '<tr><td colspan="7" class="hint">（无记录）</td></tr>') + '</table>';
+  $('pager').innerHTML =
+    '<button class="btn" type="button" id="pg-prev"' + (log.page <= 1 ? ' disabled' : '') + '>上一页</button>' +
+    '<span class="hint">第 ' + log.page + ' / ' + log.pages + ' 页 · 共 ' + log.total + ' 条</span>' +
+    '<button class="btn" type="button" id="pg-next"' + (log.page >= log.pages ? ' disabled' : '') + '>下一页</button>';
+  $('pg-prev').onclick = () => { logQuery.page--; refreshVisits(); };
+  $('pg-next').onclick = () => { logQuery.page++; refreshVisits(); };
+}
+function renderVisits(d) {
+  $('v-day-sub').textContent = d.day;
+  $('visit-today').innerHTML =
+    '<div class="chip-row">' +
+    chip('PV / 浏览次数', d.summary.pv) +
+    chip('UV / 独立 IP', d.summary.uv) +
+    chip('当前在线', d.summary.online) +
+    chip('峰值时段', d.summary.peak >= 0 ? d.summary.peak + ' 点（' + d.summary.peakV + ' 次）' : '—') +
+    '</div>' + bars24(d.hourly);
+  $('visit-trend').innerHTML = trend(d.trend);
+  $('tops').innerHTML =
+    '<div><h3>访客归属地 TOP</h3>' + topListHtml(d.topGeo) + '</div>' +
+    '<div><h3>热门页面 TOP</h3>' + topListHtml(d.topPaths) + '</div>';
+  renderDayOptions(d.days, d.day);
+  renderLog(d.log);
+}
+
+/* ---------- 拉取与轮询 ---------- */
+function onErr(err) {
+  if (/root 登入/.test(err.message || '')) { showGate(); return; }
+  statusEl.textContent = err.message || String(err);
+}
+async function refreshStats() {
+  try { renderStats(await FF.api('/api/root/stats')); statusEl.textContent = ''; }
+  catch (err) { onErr(err); }
+}
+async function refreshVisits() {
+  try {
+    const q = new URLSearchParams();
+    if (logQuery.day) q.set('day', logQuery.day);
+    if (logQuery.ip) q.set('ip', logQuery.ip);
+    if (logQuery.p) q.set('p', logQuery.p);
+    q.set('page', String(logQuery.page));
+    renderVisits(await FF.api('/api/root/visits?' + q.toString()));
+    statusEl.textContent = '';
+  } catch (err) { onErr(err); }
+}
+function stopTimers() {
+  clearInterval(timers.stats); clearInterval(timers.visits);
+  timers.stats = timers.visits = null;
+}
+function showGate() {
+  stopTimers();
+  $('zone').hidden = true;
+  $('gate').hidden = false;
+}
+async function boot() {
+  try { await FF.api('/api/root/ping'); }
+  catch { showGate(); return; }
+  stopTimers();
+  $('gate').hidden = true;
+  $('zone').hidden = false;
+  refreshStats();
+  refreshVisits();
+  timers.stats = setInterval(refreshStats, 4000);
+  timers.visits = setInterval(refreshVisits, 10000);
+}
+
+/* ---------- 交互 ---------- */
+$('r-go').onclick = async () => {
+  const st = $('r-status');
+  st.textContent = '正在登入…';
+  try {
+    await FF.api('/api/root/login', { body: { password: $('r-pass').value } });
+    st.textContent = '';
+    $('r-pass').value = '';
+    boot();
+  } catch (err) { st.textContent = err.message; }
+};
+$('r-pass').addEventListener('keydown', e => { if (e.key === 'Enter') $('r-go').click(); });
+$('btn-out').onclick = async () => {
+  try { await FF.api('/api/root/logout', { body: {} }); } catch {}
+  location.reload();
+};
+$('btn-refresh').onclick = () => { refreshStats(); refreshVisits(); };
+$('btn-pass').onclick = () => {
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 12px;color:#ff5940;letter-spacing:2px">修改 root 密码</h3>' +
+    '<label class="lab">当前密码<input class="field" id="rp-old" type="password" autocomplete="current-password"></label>' +
+    '<label class="lab">新密码（至少 6 位）<input class="field" id="rp-new" type="password" autocomplete="new-password"></label>' +
+    '<label class="lab">确认新密码<input class="field" id="rp-new2" type="password" autocomplete="new-password"></label>' +
+    '<div style="margin-top:12px"><button class="btn primary" type="button" id="rp-save">保存并重新登入</button></div>' +
+    '<p class="status" id="rp-status" role="status"></p>', true);
+  back.querySelector('#rp-save').onclick = async () => {
+    const st = back.querySelector('#rp-status');
+    const old = back.querySelector('#rp-old').value;
+    const nw = back.querySelector('#rp-new').value;
+    if (nw !== back.querySelector('#rp-new2').value) { st.textContent = '两次输入的新密码不一致。'; return; }
+    st.textContent = '保存中…';
+    try {
+      await FF.api('/api/root/password', { body: { old, next: nw } });
+      location.reload(); /* 全部 root 会话已作废，需重新登入 */
+    } catch (err) { st.textContent = err.message; }
+  };
+};
+$('f-go').onclick = () => {
+  logQuery = { day: $('f-day').value, ip: $('f-ip').value.trim(), p: $('f-p').value.trim(), page: 1 };
+  refreshVisits();
+};
+$('f-reset').onclick = () => {
+  $('f-day').value = ''; $('f-ip').value = ''; $('f-p').value = '';
+  logQuery = { day: '', ip: '', p: '', page: 1 };
+  refreshVisits();
+};
+
+/* ---------- 启动 ---------- */
+$('clock').textContent = nowStr();
+setInterval(() => { $('clock').textContent = nowStr(); }, 1000);
+boot();
+</script>
+</body>
+</html>

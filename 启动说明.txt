@@ -49,6 +49,8 @@
   /publish.html     投稿怪谈（怪谈制卡工具已并入页面本体，非内嵌框架）
   /me.html          我的主页（网页排版档案 + 原始设卡 PNG 折叠区）
   /admin.html       管理后台（顶栏入口仅玩家名字 admin 可见）
+  /root.html        ROOT 服务器监控（独立 root 密码；不在任何导航中显示，
+                    与 admin 后台完全隔离，纯硬件/运维视角）
 
 四·补充、频道与帖子
   · 初始 4 个频道：怪谈故事、公开情报、调查委托、自由创作；只有管理员能新建频道。
@@ -67,3 +69,24 @@
     若日后修改了工具原版，重新执行一次该脚本即可同步：
       python build-native-pages.py
   · 生成物：site/register.html、site/publish.html、site/assets/cardtool.css、site/assets/guaitool.css。
+
+六、root 服务器监控（/root.html）
+  · 独立页面，与 admin.html 完全隔离：独立 root 密码（与论坛管理员无关）、
+    独立访问数据文件、不在任何导航中显示，知道地址才能进。
+  · 初始 root 密码：rootpassword —— 第一次登入后请点页面右上「改密码」立即修改
+    （修改后所有 root 会话作废，需重新登入）。
+  · 页面内容：
+      - 系统资源：CPU 占用/负载/核数、内存（优先读 /proc/meminfo）、
+        磁盘（data 所在分区，fs.statfs，老 Node 回退 df）、实时网速（上下行 B/s，5 秒采样差值）、
+        系统/进程运行时长、SSE 连接数、数据文件大小。
+        网速在 Linux 读 /proc/net/dev（跳过 lo/容器网卡），Windows 本机回退 netstat -e（近似值）。
+      - 访问概览：PV / 独立 IP(UV) / 当前在线（5 分钟内打开过页面）/ 峰值时段 + 24 小时柱状图；
+        近 7 天 PV/UV 趋势；访客归属地 TOP（ip2region 离线库，geo/ip2region.xdb，约 11MB）；热门页面 TOP。
+      - 浏览记录明细：时间、IP、归属地、页面、来源、设备/浏览器；支持按日期/IP/页面筛选与分页。
+  · 数据存 data/visits.json（服务器本地，已 gitignore，随 data/ 一起备份迁移）：
+      天级聚合保留 90 天，明细保留最近约 6000 条；内存聚合，每 10 秒落盘一次。
+  · 统计口径：只计站点 .html 页面 GET（与页脚「本日活跃人数」同源）；
+      /root.html 自身、API、图片、制卡工具、404 不计入。
+  · 安全：所有 /api/root/* 接口需 root 会话；页面每 4s/10s 轮询刷新，
+    不经 SSE 广播任何访问数据（/api/events 公开，防止访客 IP 泄露）。
+    nginx 反代需带 x-forwarded-for（常见默认配置已带，否则记录到的是 127.0.0.1）。

@@ -13,6 +13,7 @@ const os = require('os');
 const { execFile } = require('child_process');
 const zlib = require('zlib');
 const installForum = require('./server-forum');
+const installRoot = require('./server-root');
 
 const ROOT = __dirname;
 const SITE = path.join(ROOT, 'site');
@@ -444,7 +445,10 @@ async function serveFile(req, res, filePath, { injectBridge = false, countVisit 
   try { stat = await fsp.stat(filePath); } catch { return notFoundPage(req, res); }
   if (stat.isDirectory()) return notFound(res);
   const ext = path.extname(filePath).toLowerCase();
-  if (countVisit && ext === '.html') bumpVisit();
+  if (countVisit && ext === '.html') {
+    bumpVisit();
+    if (rootMon) rootMon.recordVisit(req, filePath); /* root 监控页自身已在模块内排除 */
+  }
   const isText = ext === '.html' || ext === '.js' || ext === '.css';
   const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
@@ -1129,6 +1133,13 @@ const forum = installForum({
   FILES, path, fs, fsp, getVisits: todayVisits
 });
 
+/* ---------- root 服务器监控（独立于 admin，页面 site/root.html） ---------- */
+const rootMon = installRoot({
+  DB, save, route, cookies, setCookie, clearCookie,
+  httpError, sendJSON, readJSON, hashPass,
+  DATA, SITE, path, fs, fsp, os, crypto, execFile, sseClients
+});
+
 /* ---------- 请求分发 ---------- */
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
@@ -1171,12 +1182,14 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-loadDb().then(() => {
+loadDb().then(async () => {
   const migrated = forum.migrate();
   if (migrated.channels || migrated.threads) console.log('[forum] 频道 ' + migrated.channels + ' 个，帖子 ' + migrated.threads + ' 条');
+  await rootMon.init();
   server.listen(PORT, HOST, () => {
     console.log('怪啖论坛已启动：http://' + HOST + ':' + PORT + '/');
     console.log('数据目录：' + DATA);
     console.log('管理员：' + DB.config.adminUser + '（初始密码见启动说明）');
+    console.log('root 监控页：/root.html（root 初始密码 rootpassword，登入后请立即修改）');
   });
 });
