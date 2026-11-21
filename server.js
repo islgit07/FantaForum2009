@@ -192,13 +192,15 @@ setInterval(() => { for (const res of sseClients) { try { res.write(': ping\n\n'
 
 /* ---------- 在线人数（按 SSE 长连接统计，同一账号多开标签页只算一人） ---------- */
 function onlineSnapshot() {
-  const uids = new Set();
+  const members = new Map();
   let guests = 0;
   for (const res of sseClients) {
     const m = res.__online;
-    if (m && m.uid) uids.add(m.uid); else guests++;
+    if (m && m.uid) {
+      if (!members.has(m.uid)) members.set(m.uid, m.nickname || '未命名');
+    } else guests++;
   }
-  return { count: uids.size + guests, members: uids.size, guests };
+  return { count: members.size + guests, members: members.size, guests, names: Array.from(members.values()) };
 }
 let onlineTimer = null;
 function broadcastOnline() {

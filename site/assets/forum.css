@@ -220,6 +220,8 @@ label.lab .req { color: var(--red-hot); }
 .mini-list li:last-child { border-bottom: 0; }
 .mini-list a { color: #d6c3bb; text-decoration: none; }
 .mini-list a:hover { color: #ffd9cf; }
+/* 当前在线名单：只列登入成员的网名 */
+.online-list li { color: #d6c3bb; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag {
   display: inline-block; padding: 0 6px; margin-right: 6px; font-weight: bold;
   border: 1px solid; font-size: 12px; letter-spacing: 1px;

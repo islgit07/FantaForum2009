@@ -14,7 +14,6 @@
       <div class="win-bar">
         <span class="bar-title">公共聊天室</span>
         <span class="bar-sub">PUBLIC CHAT / LIVE</span>
-        <span class="online-badge" id="online-count" title="当前在线人数"><i class="dot"></i>在线 —</span>
         <span class="corner" aria-hidden="true">×</span>
       </div>
       <div class="chat-log scan" id="chat-log" aria-live="polite"></div>
@@ -46,8 +45,8 @@
       </div>
     </section>
     <section class="win">
-      <div class="win-bar"><span class="bar-title">怪谈速览</span><span class="bar-sub">ARCHIVE</span><span class="corner" aria-hidden="true">×</span></div>
-      <div class="win-body"><ul class="mini-list" id="post-list"></ul></div>
+      <div class="win-bar"><span class="bar-title">当前在线</span><span class="bar-sub">ONLINE</span><span class="online-badge" id="online-count" title="当前在线人数"><i class="dot"></i>在线 —</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><ul class="mini-list online-list" id="online-list"></ul></div>
     </section>
   </aside>
 </div>
@@ -63,17 +62,22 @@ const gateStatus = document.getElementById('gate-status');
 const form = document.getElementById('chat-form');
 const input = document.getElementById('chat-text');
 const meBox = document.getElementById('me-box');
-const postList = document.getElementById('post-list');
+const onlineList = document.getElementById('online-list');
 const motdEl = document.getElementById('motd');
 const onlineEl = document.getElementById('online-count');
 let lastId = 0;
 let stick = true;
 
-/* 在线人数：初值来自 /api/online，之后由 SSE 的 online 事件实时刷新 */
+/* 在线状态：初值来自 /api/online，之后由 SSE 的 online 事件实时刷新
+   徽标显示总人数（登入 + 访客），下方名单只列登入成员的网名 */
 function setOnline(d) {
   if (!d || typeof d.count !== 'number') return;
   onlineEl.innerHTML = '<i class="dot"></i>在线 ' + d.count + ' 人';
   onlineEl.title = '当前在线 ' + d.count + ' 人（登入 ' + (d.members || 0) + ' 人 · 访客 ' + (d.guests || 0) + ' 人）';
+  const names = Array.isArray(d.names) ? d.names : [];
+  onlineList.innerHTML = names.length
+    ? names.map(n => '<li>' + FF.esc(n) + '</li>').join('')
+    : '<li><span class="hint">' + ((d.guests || 0) > 0 ? '暂无登入成员（访客 ' + d.guests + ' 人）' : '暂无成员在线') + '</span></li>';
 }
 
 /* 公告栏：管理员输入的每一行渲染成一条，沿用 mini-list 的虚线分隔与 hint 文字样式 */
@@ -98,12 +102,7 @@ async function loadMessages() {
   list.forEach(appendMsg);
   log.scrollTop = log.scrollHeight;
 }
-async function loadPosts() {
-  const list = await FF.api('/api/posts');
-  postList.innerHTML = list.length
-    ? list.slice(0, 6).map(p => '<li><span class="tag ' + p.type + '">' + (p.type === 'puzzle' ? '【谜题】' : '【战斗】') + '</span><a href="archives.html#' + FF.esc(p.id) + '">' + FF.esc(p.name) + '</a>' + (p.closed ? '<span class="tag closed">已归档</span>' : '') + '</li>').join('')
-    : '<li><span class="hint">暂无已过审的怪谈档案。</span></li>';
-}
+
 function renderMe(s) {
   if (!s.user) {
     meBox.innerHTML = '<p class="hint">尚未登入。</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" type="button" id="side-login">登入 / 切换账号</button><a class="btn" href="register.html">创建账号</a></div>';
@@ -186,7 +185,7 @@ input.addEventListener('keydown', e => {
   renderGate(s);
   renderMe(s);
   renderMotd(s.config && s.config.motd);
-  await Promise.all([loadMessages(), loadPosts()]);
+  await loadMessages();
   FF.api('/api/online').then(setOnline).catch(() => {});
   FF.sse({
     message: appendMsg,
@@ -197,7 +196,6 @@ input.addEventListener('keydown', e => {
       if (old) log.replaceChild(fresh, old);
       else if (msg.id > lastId) { log.appendChild(fresh); lastId = msg.id; if (stick) log.scrollTop = log.scrollHeight; }
     },
-    post: () => loadPosts(),
     online: setOnline,
     config: c => renderMotd(c.motd)
   });
