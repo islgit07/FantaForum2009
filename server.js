@@ -9,6 +9,8 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+const { execFile } = require('child_process');
 const zlib = require('zlib');
 const installForum = require('./server-forum');
 
@@ -223,14 +225,59 @@ function addMessage(kind, payload) {
 }
 
 /* ---------- 图片 ---------- */
+/* 上传拦截：所有非 WebP 图片在落盘前统一转码
+ * 浏览器回退路径（老 Safari 的 canvas.toDataURL、publish.html 的默认 PNG）以及
+ * 制卡工具直传都可能塞进 PNG / JPEG。这里从源头断掉，避免 PNG 再进磁盘。
+ * 编码用系统 cwebp（libwebp 官方编码器），不引入 npm 依赖。
+ * cwebp 缺失或转码失败时降级保存原格式，绝不因为压缩让上传直接报错。
+ */
+const WEBP_QUALITY = 90;  // 与站内已有图片同一档质量
+const WEBP_METHOD = 6;    // 编码耗时换压缩率：上传是低频操作，值得
+let cwebpMissing = false;
+
+function cwebpEncode(buf, srcExt) {
+  return new Promise(resolve => {
+    if (cwebpMissing) return resolve(null);
+    const tag = crypto.randomBytes(8).toString('hex');
+    const src = path.join(os.tmpdir(), 'ff-upload-' + tag + '.' + (srcExt === 'jpeg' ? 'jpg' : srcExt));
+    const dst = path.join(os.tmpdir(), 'ff-upload-' + tag + '.webp');
+    const cleanup = () => { for (const f of [src, dst]) { try { fs.unlinkSync(f); } catch {} } };
+    fs.writeFile(src, buf, err => {
+      if (err) { cleanup(); return resolve(null); }
+      execFile('cwebp', ['-quiet', '-q', String(WEBP_QUALITY), '-m', String(WEBP_METHOD),
+        '-metadata', 'icc', src, '-o', dst], { timeout: 60000 }, async e => {
+        let out = null;
+        if (!e) { try { out = await fsp.readFile(dst); } catch {} }
+        else if (e.code === 'ENOENT') {
+          cwebpMissing = true;
+          console.warn('[img] 未找到 cwebp，图片按原格式保存（apt install webp 可恢复转码）。');
+        } else {
+          console.warn('[img] cwebp 转码失败，降级原格式：' + (e.message || e));
+        }
+        cleanup();
+        resolve(out && out.length ? out : null);
+      });
+    });
+  });
+}
+
+/* 解析上传的 data URL：非 WebP 一律转码，返回落盘用的 { buf, ext } */
+async function decodeUpload(dataUrl) {
+  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(String(dataUrl || '').trim());
+  if (!m) throw httpError(400, '图片仅支持 PNG / JPG / WebP 的 base64。');
+  const raw = Buffer.from(m[2].replace(/\s/g, ''), 'base64');
+  if (!raw.length) throw httpError(400, '图片为空。');
+  if (raw.length > 20 * 1024 * 1024) throw httpError(400, '图片过大（最多 20 MB）。');
+  if (m[1] === 'webp') return { buf: raw, ext: 'webp' };
+  const webp = await cwebpEncode(raw, m[1]);
+  if (webp && webp.length < raw.length) return { buf: webp, ext: 'webp' };
+  if (webp) console.warn('[img] WebP(' + webp.length + 'B) 不小于原图(' + raw.length + 'B)，保留原格式以免反而占更多空间');
+  return { buf: raw, ext: m[1] === 'jpeg' ? 'jpg' : m[1] };  // 降级：转码无收益或 cwebp 不可用
+}
+
 async function saveImage(dataUrl, kind, id) {
   if (!dataUrl) return null;
-  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(String(dataUrl).trim());
-  if (!m) throw httpError(400, '图片仅支持 PNG / JPG / WebP 的 base64。');
-  const buf = Buffer.from(m[2].replace(/\s/g, ''), 'base64');
-  if (!buf.length) throw httpError(400, '图片为空。');
-  if (buf.length > 20 * 1024 * 1024) throw httpError(400, '图片过大（最多 20 MB）。');
-  const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+  const { buf, ext } = await decodeUpload(dataUrl);
   const dir = path.join(FILES, kind);
   await fsp.mkdir(dir, { recursive: true });
   // 换格式（如 PNG→WebP）后清掉同 id 的其他扩展名旧文件，避免重复占用磁盘
@@ -601,11 +648,7 @@ route('POST', /^\/api\/me\/image$/, async (req, res) => {
   const b = await readJSON(req);
   const slot = SLOT_DIR.users[b.slot] ? b.slot : null;
   if (!slot) throw httpError(400, '不支持的图片位置。');
-  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(String(b.dataUrl || '').trim());
-  if (!m) throw httpError(400, '图片仅支持 PNG / JPG / WebP 的 base64。');
-  const buf = Buffer.from(m[2].replace(/\s/g, ''), 'base64');
-  if (!buf.length || buf.length > 20 * 1024 * 1024) throw httpError(400, '图片大小不合法（最多 20 MB）。');
-  const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+  const { buf, ext } = await decodeUpload(b.dataUrl);
   const dir = SLOT_DIR.users[slot];
   await fsp.mkdir(path.join(FILES, dir), { recursive: true });
   const name = u.id + '.' + ext;
@@ -786,11 +829,7 @@ route('POST', /^\/api\/admin\/image$/, async (req, res) => {
   const rec = recordOf(kind, requireText(b.id, 40, '档案'));
   if (!rec) throw httpError(404, '未找到该档案。');
   const dir = SLOT_DIR[kind][slot];
-  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(String(b.dataUrl || '').trim());
-  if (!m) throw httpError(400, '图片仅支持 PNG / JPG / WebP 的 base64。');
-  const buf = Buffer.from(m[2].replace(/\s/g, ''), 'base64');
-  if (!buf.length || buf.length > 20 * 1024 * 1024) throw httpError(400, '图片大小不合法。');
-  const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+  const { buf, ext } = await decodeUpload(b.dataUrl);
   await fsp.mkdir(path.join(FILES, dir), { recursive: true });
   const oldUrl = rec[slot];
   let oldPath = null;
