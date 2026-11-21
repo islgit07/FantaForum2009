@@ -57,7 +57,7 @@ function render(d) {
     '<div class="t-sub">' + (t.authorId
       ? '<a href="profile.html?id=' + FF.esc(t.authorId) + '" class="author-link">@' + FF.esc(t.author) + '</a>'
       : '@' + FF.esc(t.author)) + ' · ' + FF.fmtTime(t.createdAt) + ' · 回复 ' + t.replyCount + '</div>' +
-    '<div class="hint">' + hl(t.body.slice(0, 160), q) + '</div></div></li>').join('') + '</ul>'
+    '<div class="hint">' + hl(t.body.replace(/\[emoji:\d+\]/g, '〔表情〕').slice(0, 160), q) + '</div></div></li>').join('') + '</ul>'
     : '<p class="hint">没有匹配的帖子。</p>' + (Math.random() < 0.35 ? '<p class="search-echo">你搜的东西，也在搜你。</p>' : '');
   $('users').innerHTML = d.users.length ? '<div class="su-list">' + d.users.map(u => userCard(u, q)).join('') + '</div>'
     : '<p class="hint">没有匹配的用户。</p>';

@@ -78,7 +78,7 @@ function renderThreads(data) {
     const author = (t.authorId && t.authorId !== 'admin')
       ? '<a class="tr-author" href="profile.html?id=' + FF.esc(t.authorId) + '">' + FF.esc(t.author) + '</a>'
       : '<span class="tr-author">' + FF.esc(t.author) + '</span>';
-    const excerpt = String(t.body || '').replace(/\s+/g, ' ').trim();
+    const excerpt = String(t.body || '').replace(/\[emoji:\d+\]/g, '〔表情〕').replace(/\s+/g, ' ').trim();
     return '<li class="thread-row' + (t.pinned ? ' pinned' : '') + '">' +
       '<a class="tr-avatar-link" href="' + (t.authorId && t.authorId !== 'admin' ? 'profile.html?id=' + FF.esc(t.authorId) : 'javascript:void(0)') + '">' + avatar + '</a>' +
       '<div class="t-main">' +
