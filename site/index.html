@@ -21,7 +21,7 @@
         <h2 id="gate-title">登入怪啖论坛</h2>
         <p class="hint" id="gate-note">聊天室发言与怪谈投稿需要已注册并通过审核的账号。</p>
         <div class="actions">
-          <button class="btn primary" type="button" id="gate-login">切换账号 / 登入</button>
+          <button class="btn primary" type="button" id="gate-login">登入</button>
           <a class="btn" href="register.html">创建账号（制卡工具）</a>
         </div>
         <p class="status" id="gate-status" role="status"></p>
@@ -106,7 +106,7 @@ async function loadMessages() {
 
 function renderMe(s) {
   if (!s.user) {
-    meBox.innerHTML = '<p class="hint">尚未登入。</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" type="button" id="side-login">登入 / 切换账号</button><a class="btn" href="register.html">创建账号</a></div>';
+    meBox.innerHTML = '<p class="hint">尚未登入。</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" type="button" id="side-login">登入</button><a class="btn" href="register.html">创建账号</a></div>';
     document.getElementById('side-login').onclick = doSwitch;
     return;
   }
