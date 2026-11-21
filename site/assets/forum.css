@@ -621,6 +621,22 @@ mark { background: #7a1c12; color: #fff; padding: 0 2px; }
 .su-sub { color: #8b9298; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .su-go { color: #d98b76; font: 12px var(--mono); flex: none; }
 
+/* ---------- 搜索：你可能认识的人（固定一行，窄屏横向滚动） ---------- */
+.suggest-row { overflow-x: auto; padding-bottom: 4px; }
+.sg-list { display: flex; gap: 10px; min-width: 0; }
+.sg-card { position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px;
+  padding: 9px 8px; border: 1px solid #2e3944; background: #0d1118; text-decoration: none; color: inherit; }
+.sg-card:hover { border-color: var(--red-line); background: #141a22; }
+.sg-avatar { width: 38px; height: 38px; object-fit: cover; border: 1px solid #ad2217; background: #171717; flex: none; }
+.sg-avatar.avatar-ph { display: inline-flex; align-items: center; justify-content: center; color: #ffb9a8; font: 18px var(--mono); }
+.sg-main { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; }
+.sg-main b { color: #ffd9cf; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-card:hover .sg-main b { color: var(--red-hot); }
+.sg-sub { color: #8b9298; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-faction { color: #7ea9bd; font: 10px var(--mono); }
+.sg-why { position: absolute; top: 0; right: 0; padding: 1px 4px; background: #3a1712; color: #ffb9a8; font: 10px var(--mono); }
+@media (max-width: 640px) { .sg-card { flex: 0 0 154px; } }
+
 /* ================= 手机端适配（≤640px） ================= */
 /* 目标：窄屏下所有表格转为卡片堆叠，杜绝横向溢出与文字挤成一团 */
 @media (max-width: 640px) {

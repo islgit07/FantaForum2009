@@ -19,6 +19,10 @@
     </form>
     <p class="status" id="status" role="status"></p>
     <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">你可能认识的人</span><span class="bar-sub">PEOPLE YOU MAY KNOW</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><div class="suggest-row" id="suggest"></div></div>
+    </section>
+    <section class="win" style="margin-bottom:16px">
       <div class="win-bar"><span class="bar-title">帖子</span><span class="bar-sub" id="tc"></span><span class="corner" aria-hidden="true">×</span></div>
       <div class="win-body"><div id="threads"></div></div>
     </section>
@@ -48,6 +52,27 @@ function userCard(u, q) {
     '<span class="su-sub">玩家 ' + hl(u.playerName || '（匿名）', q) + (u.signature ? ' · ' + hl(u.signature, q) : '') + '</span></span>' +
     '<span class="su-go">查看主页 →</span></a>';
 }
+/* 「你可能认识的人」：同玩家 → 同阵营 → 其他，固定一行 */
+const WHY_TEXT = { samePlayer: '同玩家', sameFaction: '同阵营', other: '其他' };
+const FACTION_TEXT = { forum: '怪谈侦探', office: '异常对策课' };
+function suggestCard(u) {
+  const avatar = u.avatar
+    ? '<img class="sg-avatar" loading="lazy" decoding="async" src="' + FF.esc(u.avatar) + '" alt="头像">'
+    : '<span class="sg-avatar avatar-ph">' + FF.esc(String(u.nickname || '?').slice(0, 1)) + '</span>';
+  return '<a class="sg-card" href="profile.html?id=' + FF.esc(u.id) + '">' + avatar +
+    '<span class="sg-main"><b>' + FF.esc(u.nickname) + '</b>' +
+    '<span class="sg-sub">@' + FF.esc(u.playerName || '匿名') + '</span>' +
+    '<span class="sg-faction">' + (FACTION_TEXT[u.faction] || '') + '</span></span>' +
+    '<span class="sg-why">' + (WHY_TEXT[u.why] || '') + '</span></a>';
+}
+async function loadSuggest() {
+  try {
+    const d = await FF.api('/api/suggest-users');
+    $('suggest').innerHTML = d.users.length
+      ? '<div class="sg-list">' + d.users.map(suggestCard).join('') + '</div>'
+      : '<p class="hint">暂无可推荐的角色。</p>';
+  } catch (err) { $('suggest').innerHTML = '<p class="hint">推荐暂时不可用。</p>'; }
+}
 function render(d) {
   const q = d.q;
   $('tc').textContent = d.threads.length + ' HITS';
@@ -72,6 +97,7 @@ $('search-form').onsubmit = async e => {
 };
 (async () => {
   await FF.renderHeader();
+  loadSuggest();
   const preset = new URLSearchParams(location.search).get('q');
   if (preset) { $('q').value = preset; $('search-form').requestSubmit(); }
 })();

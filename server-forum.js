@@ -208,6 +208,11 @@ module.exports = function installForum(ctx) {
         hotThread: hot ? { id: hot.id, title: hot.title, heat: heat(hot) } : null
       };
     });
+    /* 主页只让最热门的前三个频道带 HOT；无热帖的频道不占名额。频道本身顺序不变。 */
+    const hotIds = new Set(channels.filter(c => c.hotThread)
+      .sort((a, b) => b.hotThread.heat - a.hotThread.heat || b.count - a.count || (a.order || 0) - (b.order || 0))
+      .slice(0, 3).map(c => c.id));
+    for (const c of channels) if (!hotIds.has(c.id)) c.hotThread = null;
     const ranking = list.slice().sort((a, b) =>
       (b.likes || []).length - (a.likes || []).length || b.createdAt - a.createdAt
     ).slice(0, 5).map(t => ({
@@ -261,6 +266,33 @@ module.exports = function installForum(ctx) {
       avatar: u.avatar || null, signature: (u.public || {}).signature || ''
     }));
     sendJSON(res, 200, { q: raw, threads, users });
+  });
+
+  /* 搜索页「你可能认识的人」：同玩家 → 同阵营 → 其他，按优先级凑满 5 人。
+     只推可点进主页的已过审角色；排除自己与 unknown 组（匿名/档案馆没有主页）。
+     访客没有玩家名和阵营，只走「其他」。 */
+  route('GET', /^\/api\/suggest-users$/, async (req, res) => {
+    const me = sessionUser(req);
+    const myPlayer = me ? String(me.playerName || '').trim() : '';
+    const myFaction = me ? (me.faction === 'office' ? 'office' : 'forum') : '';
+    const pool = (DB.users || []).filter(u =>
+      u.status === 'approved' && (!me || u.id !== me.id) && !isNoProfileUser(u)
+    );
+    const byNewest = (a, b) => (b.createdAt || 0) - (a.createdAt || 0) || String(a.id).localeCompare(String(b.id));
+    const samePlayer = myPlayer ? pool.filter(u => String(u.playerName || '').trim() === myPlayer).sort(byNewest) : [];
+    const sameFaction = myFaction ? pool.filter(u =>
+      (u.faction === 'office' ? 'office' : 'forum') === myFaction && String(u.playerName || '').trim() !== myPlayer
+    ).sort(byNewest) : [];
+    const chosen = new Set(samePlayer.concat(sameFaction).map(u => u.id));
+    const rest = pool.filter(u => !chosen.has(u.id)).sort(byNewest);
+    const pick = (u, why) => ({
+      id: u.id, nickname: u.nickname, playerName: u.playerName || '',
+      avatar: u.avatar || null, faction: u.faction === 'office' ? 'office' : 'forum', why
+    });
+    const users = samePlayer.slice(0, 5).map(u => pick(u, 'samePlayer'));
+    for (const u of sameFaction) { if (users.length >= 5) break; users.push(pick(u, 'sameFaction')); }
+    for (const u of rest) { if (users.length >= 5) break; users.push(pick(u, 'other')); }
+    sendJSON(res, 200, { users });
   });
 
   /* ---------- 站内消息（数据层已埋点，页面后续可接） ---------- */
