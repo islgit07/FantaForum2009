@@ -133,7 +133,8 @@ function sessionUser(req) {
 /* 拥有管理员权限的角色卡：admin 卡与「管理员」卡。
  * 按 id 白名单判定（防冒充）；玩家名为 admin 的角色卡同样视为管理员，便于日后新增同玩家卡。
  * playerName 仅管理员可改，普通用户无法自行提权，故安全。 */
-const ADMIN_ROLE_IDS = ['mwowhihsc56eb23a', '1a1f9cc9d3e1a313e90', 'mwowf3f4662cf08a'];
+/* 管理员角色卡白名单：仅坛主与管理员。??? 已退出 admin 组，只保留陷阱页可点。 */
+const ADMIN_ROLE_IDS = ['mwowhihsc56eb23a', '1a1f9cc9d3e1a313e90'];
 function isAdminRole(u) {
   if (!u || u.status !== 'approved') return false;
   return ADMIN_ROLE_IDS.includes(u.id) || String(u.playerName || '').toLowerCase() === 'admin';
