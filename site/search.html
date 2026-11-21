@@ -37,6 +37,18 @@
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
+/* 小彩蛋：点进搜索栏时占位文字短暂变成「我也在搜索你」，几秒后恢复 */
+(() => {
+  const q = $('q');
+  const origin = q.placeholder;
+  let timer;
+  q.addEventListener('focus', () => {
+    if (q.value) return;
+    q.placeholder = '我也在搜索你';
+    clearTimeout(timer);
+    timer = setTimeout(() => { q.placeholder = origin; }, 3000);
+  });
+})();
 function hl(s, q) {
   const out = FF.esc(s);
   if (!q) return out;
