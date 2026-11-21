@@ -36,8 +36,8 @@ const FF = (() => {
     return short ? '已驳回' : '未通过审核';
   };
 
-  /* Unknown 组故障特效：纯视觉，不拦截点击、不改内容。定时抖一下 + 偶尔乱码字样 */
-  const GLITCH_CHARS = '▓▒░@#$%&*?/\\|<>=+~^※×';
+  /* Unknown 组故障特效：纯视觉，不拦截点击、不改内容。多种故障随机叠加，强度偏高 */
+  const GLITCH_CHARS = '▓▒░@#$%&*?/\\|<>=+~^※×零壹贰叁肆伍陆柒捌玖';
   let glitchOn = false;
   function startUnknownGlitch() {
     if (glitchOn) return;
@@ -48,36 +48,49 @@ const FF = (() => {
     layer.setAttribute('aria-hidden', 'true');
     document.body.appendChild(layer);
     const targets = () => Array.from(document.querySelectorAll(
-      '.brand, .section-name, .kicker, .bar-title, .win-bar span, h1, h2, h3, .name, .hint, .btn, nav a, .ps-tag'
+      '.brand, .section-name, .kicker, .bar-title, .win-bar span, h1, h2, h3, .name, .hint, .btn, nav a, .ps-tag, .status'
     )).filter(e => e.children.length === 0 && e.textContent.trim().length > 1);
+    const pulse = (cls, ms) => {
+      document.body.classList.add(cls);
+      setTimeout(() => document.body.classList.remove(cls), ms);
+    };
     const scramble = () => {
-      const els = targets().sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
+      const els = targets().sort(() => Math.random() - 0.5).slice(0, 4 + Math.floor(Math.random() * 6));
       els.forEach(e => {
         const original = e.textContent;
         const garbled = Array.from(original).map(ch =>
-          ch.trim() && Math.random() < 0.45 ? GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)] : ch
+          ch.trim() && Math.random() < 0.65 ? GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)] : ch
         ).join('');
         e.classList.add('glitch-scramble');
         e.textContent = garbled;
         setTimeout(() => {
           if (e.isConnected && e.textContent === garbled) e.textContent = original;
           e.classList.remove('glitch-scramble');
-        }, 240 + Math.random() * 420);
+        }, 500 + Math.random() * 900);
       });
     };
-    const shake = () => {
-      document.body.classList.add('glitch-shake');
-      setTimeout(() => document.body.classList.remove('glitch-shake'), 300);
-      if (Math.random() < 0.6) {
-        document.body.classList.add('glitch-flash');
-        setTimeout(() => document.body.classList.remove('glitch-flash'), 420);
-      }
+    const shake = () => pulse('glitch-shake', 260 + Math.random() * 260);
+    const flash = () => pulse('glitch-flash', 260 + Math.random() * 380);
+    const invert = () => pulse('glitch-invert', 90 + Math.random() * 160);
+    const tear = () => pulse('glitch-tear', 320 + Math.random() * 420);
+    const jump = () => pulse('glitch-jump', 300 + Math.random() * 300);
+    const blur = () => pulse('glitch-blur', 280 + Math.random() * 320);
+    const skewCards = () => {
+      const cards = Array.from(document.querySelectorAll('.win, .chan-card, .msg, .sg-card, .ps-win'))
+        .sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 4));
+      cards.forEach(e => {
+        e.classList.add('glitch-card');
+        e.style.setProperty('--gx', (Math.random() * 18 - 9).toFixed(1) + 'px');
+        setTimeout(() => { e.classList.remove('glitch-card'); e.style.removeProperty('--gx'); }, 320 + Math.random() * 420);
+      });
     };
+    /* 抖动权重加倍，乱码也常出现；每次随机叠加 1~3 种 */
+    const fx = [shake, shake, flash, invert, tear, jump, blur, scramble, scramble, skewCards];
     const loop = () => setTimeout(() => {
-      shake();
-      if (Math.random() < 0.75) scramble();
+      const picks = fx.slice().sort(() => Math.random() - 0.5).slice(0, 1 + Math.floor(Math.random() * 3));
+      picks.forEach(f => f());
       loop();
-    }, 4500 + Math.random() * 8000);
+    }, 1400 + Math.random() * 3800);
     loop();
   }
   const TANZHU_ID = 'mwowhihsc56eb23a';

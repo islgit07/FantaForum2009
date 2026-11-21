@@ -30,20 +30,50 @@ body::after {
   mix-blend-mode: multiply;
 }
 /* Unknown 组：整站故障感（纯视觉，不拦截点击） */
-body.unknown-glitch.glitch-shake { animation: uf-shake .3s steps(4, end) both; }
-body.unknown-glitch .glitch-layer {
-  position: fixed; inset: 0; z-index: 190; pointer-events: none; opacity: 0;
-  background: linear-gradient(90deg, #ed382814 0%, transparent 32%, #08748114 68%, transparent 100%);
+body.unknown-glitch .brand, body.unknown-glitch .section-name,
+body.unknown-glitch .kicker, body.unknown-glitch h1, body.unknown-glitch h2 {
+  text-shadow: -1px 0 #ed382877, 1px 0 #08748177;
 }
-body.unknown-glitch.glitch-flash .glitch-layer { opacity: 1; }
-.glitch-scramble { text-shadow: -1px 0 #ed3828cc, 1px 0 #087481cc !important; }
+body.unknown-glitch .glitch-layer {
+  position: fixed; inset: 0; z-index: 190; pointer-events: none; opacity: .32;
+  background:
+    repeating-linear-gradient(0deg, #ed38280a 0 1px, transparent 1px 6px),
+    linear-gradient(90deg, #ed382814 0%, transparent 32%, #08748114 68%, transparent 100%);
+}
+body.unknown-glitch.glitch-flash .glitch-layer { opacity: 1; background: linear-gradient(90deg, #ed382844, #08748133, #ed382844); mix-blend-mode: screen; }
+body.unknown-glitch.glitch-invert { filter: invert(1) hue-rotate(180deg); }
+body.unknown-glitch.glitch-blur { filter: blur(1.4px) contrast(1.35) saturate(1.6); }
+body.unknown-glitch.glitch-jump { transform: translateY(-14px); }
+body.unknown-glitch.glitch-shake { animation: uf-shake .4s steps(5, end) both; }
+body.unknown-glitch.glitch-tear .glitch-layer::before,
+body.unknown-glitch.glitch-tear .glitch-layer::after {
+  content: ""; position: absolute; left: -5%; width: 110%;
+  background: linear-gradient(90deg, #ed3828cc, #087481cc, #ed3828cc);
+  mix-blend-mode: screen;
+}
+body.unknown-glitch.glitch-tear .glitch-layer::before { top: 28%; height: 16px; animation: uf-tear-a .42s steps(3, end) both; }
+body.unknown-glitch.glitch-tear .glitch-layer::after { top: 66%; height: 9px; animation: uf-tear-b .46s steps(3, end) both; }
+.glitch-scramble { text-shadow: -2px 0 #ed3828ee, 2px 0 #087481ee, 0 0 6px #ed382888 !important; }
+.glitch-card { transform: translateX(var(--gx, 6px)) skewX(-2deg) !important; filter: hue-rotate(95deg) contrast(1.2) !important; }
 @keyframes uf-shake {
-  0% { transform: translate(0, 0); }
-  20% { transform: translate(-4px, 1px); }
-  40% { transform: translate(3px, -2px); }
-  60% { transform: translate(-2px, 2px); }
-  80% { transform: translate(2px, -1px); }
-  100% { transform: translate(0, 0); }
+  0% { transform: translate(0, 0) skew(0); }
+  15% { transform: translate(-9px, 3px) skewX(-1.5deg); }
+  30% { transform: translate(8px, -5px) skewX(2deg); }
+  45% { transform: translate(-6px, 6px) rotate(-.5deg); }
+  60% { transform: translate(10px, -3px) skewY(1deg); }
+  75% { transform: translate(-5px, 4px) rotate(.4deg); }
+  90% { transform: translate(4px, -2px) skewX(-1deg); }
+  100% { transform: translate(0, 0) skew(0); }
+}
+@keyframes uf-tear-a {
+  0% { transform: translateX(-70px); }
+  50% { transform: translateX(90px); }
+  100% { transform: translateX(-25px); }
+}
+@keyframes uf-tear-b {
+  0% { transform: translateX(60px); }
+  50% { transform: translateX(-95px); }
+  100% { transform: translateX(15px); }
 }
 button, input, textarea, select { font: inherit; color: inherit; }
 a { color: #d8b7ae; }
