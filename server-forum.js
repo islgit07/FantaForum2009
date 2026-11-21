@@ -284,7 +284,12 @@ module.exports = function installForum(ctx) {
       (u.faction === 'office' ? 'office' : 'forum') === myFaction && String(u.playerName || '').trim() !== myPlayer
     ).sort(byNewest) : [];
     const chosen = new Set(samePlayer.concat(sameFaction).map(u => u.id));
-    const rest = pool.filter(u => !chosen.has(u.id)).sort(byNewest);
+    /* 「其他」每次请求随机洗牌，刷新即换一批；同玩家 / 同阵营仍按最新排序优先 */
+    const rest = pool.filter(u => !chosen.has(u.id));
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = rest[i]; rest[i] = rest[j]; rest[j] = t;
+    }
     const pick = (u, why) => ({
       id: u.id, nickname: u.nickname, playerName: u.playerName || '',
       avatar: u.avatar || null, faction: u.faction === 'office' ? 'office' : 'forum', why
