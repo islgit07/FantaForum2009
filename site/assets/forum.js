@@ -52,7 +52,10 @@ const FF = (() => {
     const active = document.body.dataset.section || '';
     const s = await session();
     const showDot = !!(s.user && s.unread > 0 && document.body.dataset.section !== 'messages');
-    const nav = NAV.slice();
+    const nav = NAV.map(x => x.slice());
+    if (s.user && String(s.user.playerName || '').toLowerCase() === 'unknown') {
+      for (const item of nav) if (item[2] === 'register') item[1] = '诡异入侵';
+    }
     if (s.user && s.user.playerName === 'admin') nav.push(['admin.html', '管理后台', 'admin']);
     host.className = 'site-header';
     host.innerHTML =

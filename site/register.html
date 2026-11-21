@@ -11,6 +11,15 @@
 #site-header { position: relative; z-index: 60; }
 .bridge-note { position: relative; z-index: 55; }
 #cardtool>header{display:none} /* 站点导航已含品牌与音乐开关，隐藏工具自带顶栏 */
+/* unknown 组的「诡异入侵」：接管整个创建角色页 */
+body.invade-mode #cardtool, body.invade-mode .bridge-note { display: none !important; }
+.invade-gate { max-width: 560px; margin: 40px auto; }
+.invade-lead { color: #b9a9a2; letter-spacing: 2px; margin: 4px 0 18px; }
+.invade-field { display: block; margin-bottom: 14px; color: #e5d9d1; }
+.invade-field input { display: block; width: 100%; margin-top: 6px; padding: 8px 10px;
+  background: #0a0d12; color: #e5d9d1; border: 1px solid #3b4652; outline: none; }
+.invade-field input:focus { border-color: var(--red); }
+.invade-actions { margin-top: 18px; }
 </style>
 </head>
 <body data-section="register" data-section-name="创建账号">
@@ -33,6 +42,20 @@
 })();
 </script>
 <header id="site-header"></header>
+
+<section class="win invade-gate" id="invade-gate" hidden>
+  <div class="win-bar"><span class="bar-title">诡异入侵</span><span class="bar-sub">UNKNOWN / INVASION</span><span class="corner" aria-hidden="true">×</span></div>
+  <div class="win-body">
+    <p class="invade-lead">你没有名字，也没有来处。留下两个称呼，门就会开一条缝。</p>
+    <form id="invade-form">
+      <label class="invade-field">网名<input id="invade-nickname" maxlength="24" required autocomplete="off" placeholder="论坛上显示的名字"></label>
+      <label class="invade-field">角色名<input id="invade-realname" maxlength="24" required autocomplete="off" placeholder="档案里的姓名"></label>
+      <div class="invade-actions"><button class="btn primary" type="submit">创建角色</button></div>
+    </form>
+    <p class="status" id="invade-status" role="status"></p>
+    <p class="hint">无需玩家名、头像与其他资料；创建后立即生效。</p>
+  </div>
+</section>
 
 <div class="bridge-note">
   <span class="kicker">REGISTRATION / CARD MAKER</span>
@@ -103,7 +126,35 @@
 <script src="/assets/web-bridge.js?v=20091130"></script>
 <script>
 'use strict';
-FF.renderHeader();
+(async () => {
+  await FF.renderHeader();
+  const s = await FF.session();
+  if (s.user && String(s.user.playerName || '').toLowerCase() === 'unknown') {
+    document.body.classList.add('invade-mode');
+    document.body.dataset.sectionName = '诡异入侵';
+    document.title = '诡异入侵 · 怪啖论坛';
+    const sn = document.querySelector('#site-header .section-name');
+    if (sn) sn.textContent = '诡异入侵';
+    document.getElementById('invade-gate').hidden = false;
+    const form = document.getElementById('invade-form');
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const status = document.getElementById('invade-status');
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      status.textContent = '正在让什么东西进来…';
+      try {
+        await FF.api('/api/invade', { method: 'POST', body: {
+          nickname: document.getElementById('invade-nickname').value.trim(),
+          realName: document.getElementById('invade-realname').value.trim()
+        } });
+        status.textContent = '……它进来了。聊天室响了一声。';
+        form.reset();
+      } catch (err) { status.textContent = err.message; }
+      finally { button.disabled = false; }
+    };
+  }
+})();
 window.addEventListener('message', e => {
   if (e.origin !== location.origin || !e.data || e.data.source !== 'fanta-bridge') return;
   if (e.data.tool !== 'card' || !e.data.ok || e.data.ready) return;
