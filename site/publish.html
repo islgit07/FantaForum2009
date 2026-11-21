@@ -35,6 +35,11 @@ body.m-mobile .card .upload { pointer-events: none; }
 .m-label textarea { min-height: 56px; }
 .m-sharing { margin: 14px 0 0; color: #c9bfc0; font-size: 14px; }
 .m-sharing label { display: inline-flex; align-items: center; gap: 6px; margin: 8px 16px 0 0; }
+/* 是否公开：投稿形态选项，位于卡片之外，不进卡面截图 */
+.publish-visibility { max-width: 1000px; margin: 24px auto 0; color: #c9bfc0; font-size: 14px; line-height: 1.6; }
+.publish-visibility .vis-title { margin: 0 0 10px; letter-spacing: 1px; }
+.publish-visibility label { display: inline-flex; align-items: baseline; gap: 6px; margin: 0 24px 10px 0; }
+.publish-visibility small { color: #93a3b4; font-size: 12px; }
 </style>
 </head>
 <body data-section="publish" data-section-name="发布怪谈">
@@ -74,7 +79,7 @@ body.m-mobile .card .upload { pointer-events: none; }
 </div></section><main hidden><div class="controls"><label>形象大小</label><input type="range" id="zoom" min=".5" max="3" value="1" step=".01"><button id="replace">更换形象</button><button id="reset">形象居中</button><small>在形象框内拖动调整位置</small></div><div class="viewport"><article class="card" id="card"><canvas class="archive-texture" id="archive-texture" width="1000" height="1580" aria-hidden="true"></canvas>
 <div class="topline"><span>FANTA FORUM / ARCHIVE</span><span>COMBAT</span></div><h1><span class="title-group"><span class="archive-title">怪谈档案</span><span class="archive-english">ANOMALY ARCHIVE</span></span><span class="title-slash" aria-hidden="true">//</span><span class="archive-type">【战斗】类</span><canvas class="header-barcode" id="header-barcode" width="410" height="132" aria-hidden="true"></canvas></h1>
 <div class="intro"><div class="image-shell"><div class="image-bar"><span>怪谈形象</span><span aria-hidden="true">×</span></div><div class="image" id="frame"><img id="portrait" alt="怪谈形象" hidden><button class="upload" id="upload" type="button"><span>＋</span>点击添加怪谈形象（选填）</button></div></div>
-<div class="facts"><label>怪谈名称<textarea data-field id="name" maxlength="60" placeholder="填写怪谈名称" required rows="2"></textarea></label><label class="author-row">投稿人：<span class="author-input"><span id="author-at" hidden>@</span><input data-field id="author" maxlength="24" placeholder="填写你的账号名（默认匿名）"></span></label><section class="section influence"><h2>怪谈影响范围<small>AREA OF INFLUENCE</small></h2><textarea data-field id="area" maxlength="160" placeholder="面积必填，具体位置选填" required></textarea></section></div></div>
+<div class="facts"><label>怪谈名称<textarea data-field id="name" maxlength="60" placeholder="填写怪谈名称" required rows="2"></textarea></label><label class="author-row">投稿人：<span class="author-input"><span id="author-at" hidden>@</span><input data-field id="author" maxlength="24" placeholder="填写投稿人（默认匿名）"></span></label><section class="section influence"><h2>怪谈影响范围<small>AREA OF INFLUENCE</small></h2><textarea data-field id="area" maxlength="160" placeholder="面积必填，具体位置选填" required></textarea></section></div></div>
 
 <section class="section"><h2>怪谈机制<small>MECHANISM</small></h2><textarea data-field maxlength="300" placeholder="描述怪谈的能力"></textarea></section>
 
@@ -84,6 +89,9 @@ body.m-mobile .card .upload { pointer-events: none; }
 <label><input type="radio" name="sharing" value="no"><span>否</span><small>（此怪谈已处理，但也可自行创作玩法后在 if 线中给他人游玩）</small></label></section>
 <div class="archive-stamp" id="archive-stamp" hidden><span>STATUS / CLOSED</span><strong>已处理，仅归档</strong><small>ARCHIVED · FANTA FORUM</small></div><canvas class="signal-texture" id="signal-texture" width="1000" height="1580" aria-hidden="true"></canvas><footer class="credit"><span><b class="footer-brand">怪啖论坛</b> / www.FantaForum.fmi</span><label>设主<input data-field id="owner" maxlength="24" placeholder="此处填写你的cn"></label></footer>
 </article></div>
+<section class="publish-visibility"><div class="vis-title">是否公开这份怪谈</div>
+<label><input type="radio" name="visibility" value="yes" checked><span>公开</span><small>（同步发布到「调查委托」，公开征集调查者）</small></label>
+<label><input type="radio" name="visibility" value="no"><span>不公开</span><small>（同步发布到「怪谈故事」，仅作档案留存）</small></label></section>
 <p class="status" role="status"></p><input type="file" id="file" accept="image/png,image/jpeg,image/webp" hidden></main>
 
 </div>

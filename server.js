@@ -171,18 +171,56 @@ function fullUser(u) {
   return Object.assign({}, u, { public: u.public, archive: u.archive });
 }
 function publicPost(p) {
-  /* 投稿人按 authorId 实时解析网名（匿名投稿保持匿名）；设主以投稿时填写的 owner 文本为准 */
+  /* 投稿人一律以投稿时页面填写的文本为准（@？？？ / 匿名），不按玩家账号反查网名。
+     authorId 只表示「这个名字对应到哪张角色卡」，用于点击跳转；找不到就是 null。 */
   const u = p.authorId && DB.users.find(x => x.id === p.authorId);
-  const named = p.author && p.author !== '匿名';
   return {
     id: p.id, type: p.type, name: p.name,
     authorId: p.authorId || null,
-    author: named && u && u.nickname ? u.nickname : p.author,
+    author: p.author || (u && u.nickname) || '匿名',
     owner: p.owner || (u && u.playerName) || null,
     area: p.area,
     mechanism: p.mechanism, countermeasures: p.countermeasures, sharing: p.sharing,
     closed: p.closed, status: p.status, portrait: p.portrait || null, card: p.card, createdAt: p.createdAt
   };
+}
+
+/* ---------- 投稿 → 频道帖子同步 ----------
+ * 公开的怪谈同步到「调查委托」（公开召集调查者），不公开的归「怪谈故事」（仅作档案留存）。
+ * 帖子作者只认页面填写的投稿人文本；能对应到角色卡时挂 authorId 供点击跳转，
+ * 对应不到（或「匿名」「档案」这类无主页角色）就不挂，避免化名投稿被账号暴露。
+ */
+function syncPostToForum(post) {
+  if (!post) return null;
+  if (!Array.isArray(DB.channels) || !DB.channels.length) return null;
+  if (!Array.isArray(DB.threads)) DB.threads = [];
+  /* 同一份档案只同步一次（重复审核 / 改档都不会再发一条） */
+  if (DB.threads.some(t => t.source && t.source.kind === 'archive' && t.source.postId === post.id)) return null;
+  const wantName = post.public === 'no' ? '怪谈故事' : '调查委托';
+  const ch = DB.channels.find(c => c.name === wantName)
+    || DB.channels.find(c => c.name === '怪谈故事') || DB.channels[0];
+  if (!ch) return null;
+  const body = [
+    '影响范围：' + (post.area || '（未填写）'),
+    '机制：' + (post.mechanism || '（未填写）'),
+    (post.type === 'puzzle' ? '谜底：' : '对策：') + (post.countermeasures || '（未填写）')
+  ].join('\n');
+  const owner = post.authorId ? DB.users.find(x => x.id === post.authorId) : null;
+  const t = {
+    id: uid(), channelId: ch.id, title: post.name, body,
+    images: [post.card, post.portrait].filter(Boolean),
+    authorId: post.authorId || null,
+    author: post.author || '匿名',
+    avatar: (owner && owner.avatar) || null,
+    anon: false, authorNoProfile: !post.authorId,
+    createdAt: Date.now(), updatedAt: Date.now(),
+    likes: [], replies: [], pinned: false, pinnedBy: null,
+    deleted: false, deletedBy: null, status: 'approved',
+    source: { kind: 'archive', postId: post.id }
+  };
+  DB.threads.push(t);
+  broadcast('thread', t);
+  return t;
 }
 
 /* ---------- SSE ---------- */
@@ -568,11 +606,20 @@ route('POST', /^\/api\/posts$/, async (req, res) => {
   const area = requireText(b.area, 160, '怪谈影响范围');
   const type = b.type === 'puzzle' ? 'puzzle' : 'combat';
   const sharing = b.sharing === 'no' ? 'no' : 'yes';
+  /* 投稿人：以页面填写的文本为准（前端已去掉开头的 @），留空即匿名 */
+  const authorText = text(b.author, 24, '投稿人').replace(/^@+/, '').trim();
+  /* 这个名字能对上哪张角色卡，就挂哪张的 id 供点击跳转；无主页角色（匿名 / 档案）不挂 */
+  const authorRec = authorText && DB.users.find(x => x.nickname === authorText);
+  const authorId = (authorRec && !isNoProfileUser(authorRec)) ? authorRec.id : null;
+  /* 是否公开：公开的同步到「调查委托」，不公开的同步到「怪谈故事」 */
+  const pub = b.public === 'no' ? 'no' : 'yes';
+  const owner = text(b.owner, 24, '设主') || u.playerName || '';
   const id = uid();
   const approved = !!DB.config.autoApprovePosts;
   const post = {
     id, type, name, area,
-    author: u.nickname, authorId: u.id, owner: u.playerName,
+    author: authorText || '匿名', authorId, submitterId: u.id, owner,
+    public: pub,
     mechanism: text(b.mechanism, 300, '怪谈机制'),
     countermeasures: text(b.countermeasures, 300, '怪谈对策'),
     sharing, closed: sharing === 'no',
@@ -584,10 +631,12 @@ route('POST', /^\/api\/posts$/, async (req, res) => {
   };
   if (!post.card) throw httpError(400, '卡面导出失败，请重试。');
   DB.posts.push(post);
+  /* 投稿即刻同步一条频道帖子：公开→调查委托，不公开→怪谈故事 */
+  const thread = syncPostToForum(post);
   save();
-  if (approved) addMessage('system', { text: '「' + u.nickname + '」投稿了新怪谈《' + name + '》，已放入怪谈档案。' });
+  if (approved) addMessage('system', { text: '「' + post.author + '」投稿了新怪谈《' + name + '》，已放入怪谈档案。' });
   broadcast('post', publicPost(post));
-  sendJSON(res, 200, { ok: true, status: post.status, post: publicPost(post) });
+  sendJSON(res, 200, { ok: true, status: post.status, post: publicPost(post), threadId: thread ? thread.id : null });
 });
 
 route('GET', /^\/api\/messages$/, async (req, res, m, url) => {
