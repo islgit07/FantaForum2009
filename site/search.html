@@ -60,12 +60,42 @@ function suggestCard(u) {
   return '<a class="sg-card" href="profile.html?id=' + FF.esc(u.id) + '">' + avatar +
     '<span class="sg-main"><b>' + FF.esc(u.nickname) + '</b></span></a>';
 }
+/* 一次性彩蛋：首个推荐突然变成 unknown 角色，1 秒后网页震一下并悄悄复原 */
+async function maybeSuggestEaster() {
+  if (document.cookie.split(';').some(c => c.trim() === 'ff_suggest_easter=1')) return;
+  let d;
+  try { d = await FF.api('/api/easter-user'); } catch (err) { return; }
+  const ghost = d.user;
+  if (!ghost) return;
+  const box = $('suggest');
+  const first = box.querySelector('.sg-card');
+  if (!first) return;
+  const original = first.outerHTML;
+  document.cookie = 'ff_suggest_easter=1; path=/; max-age=31536000; SameSite=Lax';
+  setTimeout(() => {
+    if (!first.isConnected) return;
+    const avatar = ghost.avatar
+      ? '<img class="sg-avatar" src="' + FF.esc(ghost.avatar) + '" alt="头像">'
+      : '<span class="sg-avatar avatar-ph">' + FF.esc(String(ghost.nickname || '?').slice(0, 1)) + '</span>';
+    first.outerHTML = '<div class="sg-card easter-ghost">' + avatar +
+      '<span class="sg-main"><b>' + FF.esc(ghost.nickname) + '</b></span></div>';
+    setTimeout(() => {
+      document.body.classList.add('easter-shake');
+      setTimeout(() => {
+        document.body.classList.remove('easter-shake');
+        const cur = box.querySelector('.easter-ghost');
+        if (cur) cur.outerHTML = original;
+      }, 320);
+    }, 1000);
+  }, 600 + Math.random() * 700);
+}
 async function loadSuggest() {
   try {
     const d = await FF.api('/api/suggest-users');
     $('suggest').innerHTML = d.users.length
       ? '<div class="sg-list">' + d.users.map(suggestCard).join('') + '</div>'
       : '<p class="hint">暂无可推荐的角色。</p>';
+    maybeSuggestEaster();
   } catch (err) { $('suggest').innerHTML = '<p class="hint">推荐暂时不可用。</p>'; }
 }
 function render(d) {

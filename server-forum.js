@@ -302,6 +302,13 @@ module.exports = function installForum(ctx) {
     sendJSON(res, 200, { users });
   });
 
+  /* 搜索页彩蛋：随机给一个 unknown 组角色，仅用于一次性视觉恶作剧，不进正常推荐 */
+  route('GET', /^\/api\/easter-user$/, async (req, res) => {
+    const pool = (DB.users || []).filter(u => isNoProfileUser(u));
+    const u = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+    sendJSON(res, 200, { user: u ? { nickname: u.nickname, avatar: u.avatar || null } : null });
+  });
+
   /* ---------- 站内消息（数据层已埋点，页面后续可接） ---------- */
   route('GET', /^\/api\/notifications$/, async (req, res) => {
     const a = actorOf(req);

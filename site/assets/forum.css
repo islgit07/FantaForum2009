@@ -75,6 +75,9 @@ body.unknown-glitch.glitch-tear .glitch-layer::after { top: 66%; height: 9px; an
   50% { transform: translateX(-95px); }
   100% { transform: translateX(15px); }
 }
+/* 搜索页一次性彩蛋：闪现后震一下复原 */
+body.easter-shake { animation: uf-shake .32s steps(5, end) both; }
+.sg-card.easter-ghost { text-shadow: -1px 0 #ed3828aa, 1px 0 #087481aa; }
 button, input, textarea, select { font: inherit; color: inherit; }
 a { color: #d8b7ae; }
 [hidden] { display: none !important; }
