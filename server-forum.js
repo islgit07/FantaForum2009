@@ -258,8 +258,8 @@ module.exports = function installForum(ctx) {
       author: resolveIdentity(t.authorId, t.author, t.avatar).author, authorId: t.authorId, createdAt: t.createdAt, likes: (t.likes || []).length,
       replyCount: (t.replies || []).filter(r => !r.deleted).length
     }));
-    // 用户搜索：网名 / 玩家名 / 个性签名，仅已过审账号
-    const users = (DB.users || []).filter(u => u.status === 'approved' && (
+    // 用户搜索：网名 / 玩家名 / 个性签名，仅已过审账号；unknown 组（？？？除外）没有主页，不列出
+    const users = (DB.users || []).filter(u => u.status === 'approved' && !isNoProfileUser(u) && (
       hit(u.nickname) || hit(u.playerName) || hit((u.public || {}).signature)
     )).slice(0, 100).map(u => ({
       id: u.id, nickname: u.nickname, playerName: u.playerName || '',

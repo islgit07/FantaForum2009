@@ -266,6 +266,12 @@ function broadcastOnline() {
 
 function addMessage(kind, payload) {
   const msg = Object.assign({ id: ++DB.messageSeq, ts: Date.now(), kind }, payload);
+  /* 聊天消息实时推送也要带 noProfile：unknown 组（？？？除外）的头像与网名不可点。
+     /api/messages 读取时仍按当前账号状态重算，避免这里存的标记过期。 */
+  if (msg.kind === 'chat' && msg.userId) {
+    const u = DB.users.find(x => x.id === msg.userId);
+    if (u) { msg.noProfile = isNoProfileUser(u); msg.muted = isMutedUser(u); }
+  }
   DB.messages.push(msg);
   if (DB.messages.length > 5000) DB.messages.splice(0, DB.messages.length - 5000);
   save();
@@ -566,7 +572,7 @@ route('POST', /^\/api\/invade$/, async (req, res) => {
     throw httpError(409, '该网名已被占用。');
   const id = uid();
   const user = {
-    id, nickname, playerName: 'unknown', faction: 'forum', status: 'approved',
+    id, nickname, playerName: 'unknown', faction: 'unknown', status: 'approved',
     createdAt: Date.now(),
     public: { gender: '保密', age: '', signature: '', intro: '' },
     archive: { realName, realGender: '', realAge: '', species: '', height: '', history: '' },
@@ -1211,6 +1217,14 @@ const server = http.createServer(async (req, res) => {
 loadDb().then(async () => {
   const migrated = forum.migrate();
   if (migrated.channels || migrated.threads) console.log('[forum] 频道 ' + migrated.channels + ' 个，帖子 ' + migrated.threads + ' 条');
+  /* unknown 组统一归入独立的「Unknown」阵营（？？？也算该组），新旧账号启动时对齐一次 */
+  let unknownFixed = 0;
+  for (const u of DB.users || []) {
+    if (String(u.playerName || '').toLowerCase() === 'unknown' && u.faction !== 'unknown') {
+      u.faction = 'unknown'; unknownFixed++;
+    }
+  }
+  if (unknownFixed) { await save(); console.log('[migrate] unknown 阵营对齐 ' + unknownFixed + ' 个账号'); }
   await rootMon.init();
   server.listen(PORT, HOST, () => {
     console.log('怪啖论坛已启动：http://' + HOST + ':' + PORT + '/');

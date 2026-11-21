@@ -315,7 +315,7 @@ const FF = (() => {
     }
     const mine = sessionCache && sessionCache.user && sessionCache.user.id === msg.userId;
     const canClick = !msg.noProfile;
-    row.className = 'msg' + (mine ? ' mine' : '');
+    row.className = 'msg' + (mine ? ' mine' : '') + (msg.noProfile ? ' no-profile' : '');
     row.dataset.id = msg.id;
     row.innerHTML =
       (msg.avatar ? '<img class="avatar" loading="lazy" decoding="async" src="' + esc(msg.avatar) + '" alt="头像"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' : '<span></span>') +

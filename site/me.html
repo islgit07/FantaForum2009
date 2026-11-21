@@ -53,7 +53,9 @@ function openLogin() {
 }
 openLogin();
 
-const FACTION_TEXT = (f, me) => me && me.playerName === 'admin' ? 'admin' : (f === 'office' ? '异常对策课' : '怪谈侦探');
+const FACTION_TEXT = (f, me) => me && me.playerName === 'admin' ? 'admin'
+  : (f === 'unknown' || String(me && me.playerName || '').toLowerCase() === 'unknown') ? 'Unknown'
+  : (f === 'office' ? '异常对策课' : '怪谈侦探');
 const field = (label, val, cls) =>
   '<div class="pf-row"><span class="pf-label">' + FF.esc(label) + '</span>' +
   '<div class="pf-val' + (cls ? ' ' + cls : '') + '">' + (val ? FF.esc(val) : '<span class="pf-empty">（未填写）</span>') + '</div></div>';
@@ -63,7 +65,7 @@ const multi = (label, val) =>
 
 function renderSheet(me) {
   const p = me.public || {}, a = me.archive || {};
-  const faction = me.faction === 'office' ? 'office' : 'forum';
+  const faction = me.faction === 'unknown' ? 'unknown' : (me.faction === 'office' ? 'office' : 'forum');
   $('bar-name').textContent = '怪啖论坛 » ' + me.nickname + ' 的主页';
   $('sheet-box').innerHTML =
     '<div class="psheet ' + faction + '">' +

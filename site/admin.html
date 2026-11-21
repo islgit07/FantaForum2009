@@ -47,7 +47,9 @@ let data = null;
 let tab = 'overview';
 
 const STATUS_TEXT = { approved: '已通过', pending: '审核中', rejected: '已驳回' };
-const factionText = (f, u) => u && u.playerName === 'admin' ? 'admin' : (f === 'office' ? '异常对策课' : '怪谈侦探');
+const factionText = (f, u) => u && u.playerName === 'admin' ? 'admin'
+  : (f === 'unknown' || String(u && u.playerName || '').toLowerCase() === 'unknown') ? 'Unknown'
+  : (f === 'office' ? '异常对策课' : '怪谈侦探');
 
 function viewImage(src, title) {
   FF.openModal('<div class="win-bar" style="margin:-16px -16px 12px"><span class="bar-title">' + FF.esc(title || '查看') + '</span><span class="corner" aria-hidden="true">×</span></div><img class="full" src="' + FF.esc(src) + '" alt="">', true);
