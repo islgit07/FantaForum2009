@@ -19,6 +19,8 @@ body.invade-mode #cardtool, body.invade-mode .bridge-note { display: none !impor
 .invade-field input { display: block; width: 100%; margin-top: 6px; padding: 8px 10px;
   background: #0a0d12; color: #e5d9d1; border: 1px solid #3b4652; outline: none; }
 .invade-field input:focus { border-color: var(--red); }
+.invade-avatar-row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.invade-avatar { width: 56px; height: 56px; object-fit: cover; border: 1px solid #ad2217; background: #171717; }
 .invade-actions { margin-top: 18px; }
 </style>
 </head>
@@ -49,11 +51,14 @@ body.invade-mode #cardtool, body.invade-mode .bridge-note { display: none !impor
     <p class="invade-lead">你没有名字，也没有来处。留下两个称呼，门就会开一条缝。</p>
     <form id="invade-form">
       <label class="invade-field">网名<input id="invade-nickname" maxlength="24" required autocomplete="off" placeholder="论坛上显示的名字"></label>
-      <label class="invade-field">角色名<input id="invade-realname" maxlength="24" required autocomplete="off" placeholder="档案里的姓名"></label>
+      <label class="invade-field">头像<span class="invade-avatar-row">
+        <img id="invade-avatar-preview" class="invade-avatar" alt="头像预览" hidden>
+        <input type="file" id="invade-avatar" accept="image/png,image/jpeg,image/webp" required>
+      </span></label>
       <div class="invade-actions"><button class="btn primary" type="submit">创建角色</button></div>
     </form>
     <p class="status" id="invade-status" role="status"></p>
-    <p class="hint">无需玩家名、头像与其他资料；创建后立即生效。</p>
+    <p class="hint">无需玩家名与其他资料；创建后立即生效。</p>
   </div>
 </section>
 
@@ -137,6 +142,33 @@ body.invade-mode #cardtool, body.invade-mode .bridge-note { display: none !impor
     if (sn) sn.textContent = '诡异入侵';
     document.getElementById('invade-gate').hidden = false;
     const form = document.getElementById('invade-form');
+    const fileEl = document.getElementById('invade-avatar');
+    const preview = document.getElementById('invade-avatar-preview');
+    const readAsDataURL = file => new Promise((res, rej) => {
+      const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+    });
+    fileEl.onchange = async () => {
+      const f = fileEl.files && fileEl.files[0];
+      if (!f) { preview.hidden = true; return; }
+      preview.src = await readAsDataURL(f); preview.hidden = false;
+    };
+    /* 头像先压到 WebP（最长边 512），避免大图把上传撑爆 */
+    const avatarData = async () => {
+      const f = fileEl.files && fileEl.files[0];
+      if (!f) throw new Error('请上传头像。');
+      const src = await readAsDataURL(f);
+      const img = new Image(); img.src = src;
+      if (img.decode) await img.decode().catch(() => {});
+      else await new Promise(ok => { img.onload = ok; img.onerror = ok; });
+      if (!img.naturalWidth) return src;
+      const scale = Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      cv.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      const webp = cv.toDataURL('image/webp', 0.88);
+      return webp.startsWith('data:image/webp') ? webp : src;
+    };
     form.onsubmit = async e => {
       e.preventDefault();
       const status = document.getElementById('invade-status');
@@ -146,10 +178,10 @@ body.invade-mode #cardtool, body.invade-mode .bridge-note { display: none !impor
       try {
         await FF.api('/api/invade', { method: 'POST', body: {
           nickname: document.getElementById('invade-nickname').value.trim(),
-          realName: document.getElementById('invade-realname').value.trim()
+          avatar: await avatarData()
         } });
         status.textContent = '……它进来了。聊天室响了一声。';
-        form.reset();
+        form.reset(); preview.hidden = true;
       } catch (err) { status.textContent = err.message; }
       finally { button.disabled = false; }
     };

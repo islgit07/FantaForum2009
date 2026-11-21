@@ -560,14 +560,14 @@ route('POST', /^\/api\/register$/, async (req, res) => {
 });
 
 /* 诡异入侵：unknown 组登入者创建同组角色卡。
-   只需要网名与角色名；不生成头像/卡面，免审核，并在聊天室广播一条系统消息。 */
+   只需要网名与头像；不生成卡面，免审核，并在聊天室广播一条系统消息。 */
 route('POST', /^\/api\/invade$/, async (req, res) => {
   const me = sessionUser(req);
   if (!me || String(me.playerName || '').toLowerCase() !== 'unknown')
     throw httpError(403, '只有 unknown 组的入侵者才能创建此类角色。');
   const b = await readJSON(req);
   const nickname = requireText(b.nickname, 24, '网名');
-  const realName = requireText(b.realName, 24, '角色名');
+  if (!b.avatar) throw httpError(400, '请上传头像。');
   if (DB.users.some(u => u.nickname.toLowerCase() === nickname.toLowerCase()))
     throw httpError(409, '该网名已被占用。');
   const id = uid();
@@ -575,8 +575,9 @@ route('POST', /^\/api\/invade$/, async (req, res) => {
     id, nickname, playerName: 'unknown', faction: 'unknown', status: 'approved',
     createdAt: Date.now(),
     public: { gender: '保密', age: '', signature: '', intro: '' },
-    archive: { realName, realGender: '', realAge: '', species: '', height: '', history: '' },
-    avatar: null, portrait: null, card: null, masked: {}
+    archive: { realName: '', realGender: '', realAge: '', species: '', height: '', history: '' },
+    avatar: await saveImage(b.avatar, 'avatars', id),
+    portrait: null, card: null, masked: {}
   };
   DB.users.push(user);
   save();
