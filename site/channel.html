@@ -102,7 +102,7 @@ function openNewThread() {
     '<label class="lab">配图（最多 3 张，可选）<input type="file" id="nt-file" accept="image/png,image/jpeg,image/webp" multiple></label>' +
     '<label class="lab" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="nt-anon"> 匿名发布（不显示你的网名与头像）</label>' +
     '<div id="nt-preview" class="thread-images"></div>' +
-    '<div style="margin-top:12px"><button class="btn primary" type="button" id="nt-go">发布</button></div>' +
+    '<div style="margin-top:12px;display:flex;gap:8px"><button class="btn" type="button" id="nt-emoji" title="表情包">表情</button><button class="btn primary" type="button" id="nt-go">发布</button></div>' +
     '<p class="status" id="nt-status"></p>', true);
   const files = back.querySelector('#nt-file');
   images = [];
@@ -114,6 +114,17 @@ function openNewThread() {
     }
     back.querySelector('#nt-preview').innerHTML = images.map(x => '<img src="' + x + '" alt="预览">').join('');
   };
+  back.querySelector('#nt-emoji').onclick = () => FF.openEmojiPicker(back.querySelector('#nt-emoji'), {
+    onPick: em => {
+      const box = back.querySelector('#nt-body');
+      const token = '[emoji:' + em.id + ']';
+      const a = box.selectionStart == null ? box.value.length : box.selectionStart;
+      const b = box.selectionEnd == null ? a : box.selectionEnd;
+      box.value = box.value.slice(0, a) + token + box.value.slice(b);
+      box.focus();
+      box.selectionStart = box.selectionEnd = a + token.length;
+    }
+  });
   back.querySelector('#nt-go').onclick = async () => {
     const title = back.querySelector('#nt-title').value.trim();
     const body = back.querySelector('#nt-body').value.trim();
@@ -150,6 +161,7 @@ async function load() {
   await FF.renderHeader();
   $('new-thread').onclick = openNewThread;
   if (!cid) { $('status').textContent = '缺少频道参数。'; return; }
+  await FF.loadEmojis();
   await load();
   FF.sse({ thread: load, threadDelete: load, reply: load, like: load });
 })();

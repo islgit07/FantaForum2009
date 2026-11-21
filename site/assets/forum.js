@@ -297,11 +297,17 @@ const FF = (() => {
     const row = document.createElement('div');
     const bodyHtml = () => msg.adminDeleted
       ? '<span class="del-mark">【管理员已删除】</span>'
-      : esc(msg.text);
+      : renderText(msg.text);
+    /* 记下原文并打标记，表情被删/新增时能原地重绘 */
+    const markBody = () => {
+      const b = row.querySelector('.body');
+      if (b && !msg.adminDeleted) { b._ffText = String(msg.text == null ? '' : msg.text); b.classList.add('ff-emoji-host'); }
+    };
     if (msg.kind === 'system') {
       row.className = 'msg system';
       row.dataset.id = msg.id;
       row.innerHTML = '<div class="body">' + bodyHtml() + '　<span class="time">' + fmtTime(msg.ts) + '</span></div>';
+      markBody();
       return row;
     }
     const mine = sessionCache && sessionCache.user && sessionCache.user.id === msg.userId;
@@ -312,6 +318,7 @@ const FF = (() => {
       (msg.avatar ? '<img class="avatar" loading="lazy" decoding="async" src="' + esc(msg.avatar) + '" alt="头像"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' : '<span></span>') +
       '<div><div class="meta"><span class="who"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' + esc(msg.nickname) + '</span>' + (msg.muted ? '<span class="mute-tag">已禁言</span>' : '') + adminBadge(msg.userId) + '<span class="time">' + fmtTime(msg.ts) + '</span></div>' +
       '<div class="body">' + bodyHtml() + '</div></div>';
+    markBody();
     return row;
   }
   function bindProfileClicks(root) {
@@ -376,5 +383,275 @@ const FF = (() => {
     else { pokeStage = 2; pokeModal('哼，还戳？生气了 不理你了 :-<'); }
   }
 
-  return { api, session, esc, fmtTime, renderHeader, sse, openModal, openLogin, showProfile, msgRow, bindProfileClicks, switchAccount };
+  /* ---------- 表情包（全站共用） ----------
+   * 消息与帖子正文里的占位符写作 [emoji:数字id]，渲染时换成 256×256 的 WebP。
+   * 所有登入且过审的账号都有管理权：上传、删表情、建组、删组。
+   */
+  const EMOJI_SIZE = 256;
+  let emojiData = { size: EMOJI_SIZE, groups: [], emojis: [] };
+  let emojiById = new Map();
+  let emojiLoaded = false;
+  let pickerEl = null;
+
+  function applyEmojiData(d) {
+    if (!d || !Array.isArray(d.emojis)) return;
+    emojiData = { size: d.size || EMOJI_SIZE, groups: d.groups || [], emojis: d.emojis };
+    emojiById = new Map(emojiData.emojis.map(e => [e.id, e]));
+    emojiLoaded = true;
+    refreshEmojiText();
+    if (pickerEl && pickerEl.__refresh) pickerEl.__refresh();
+  }
+  async function loadEmojis(force) {
+    if (emojiLoaded && !force) return emojiData;
+    try { applyEmojiData(await api('/api/emojis')); } catch { /* 掉线时按空表渲染，不影响正文 */ }
+    return emojiData;
+  }
+
+  /* 把纯文本渲染成 HTML：先转义，再把 [emoji:id] 换成图片 */
+  function renderText(text) {
+    const src = String(text == null ? '' : text);
+    if (src.indexOf('[emoji:') < 0) return esc(src);
+    let out = '', i = 0, m;
+    const re = /\[emoji:(\d+)\]/g;
+    while ((m = re.exec(src))) {
+      out += esc(src.slice(i, m.index));
+      const em = emojiById.get(Number(m[1]));
+      out += em
+        ? '<img class="emoji" src="' + esc(em.url) + '" alt="' + esc(':' + (em.name || '表情') + ':') +
+          '" title="' + esc(em.name || '表情') + '" loading="lazy" decoding="async">'
+        : '<span class="emoji-gone" title="该表情已被删除">[表情]</span>';
+      i = m.index + m[0].length;
+    }
+    out += esc(src.slice(i));
+    return out;
+  }
+
+  /* 记录原文，表情增删后可以原地重绘（不刷新页面） */
+  function fillText(el, text) {
+    if (!el) return;
+    el._ffText = String(text == null ? '' : text);
+    el.classList.add('ff-emoji-host');
+    el.innerHTML = renderText(el._ffText);
+  }
+  function refreshEmojiText() {
+    document.querySelectorAll('.ff-emoji-host').forEach(el => {
+      if (typeof el._ffText === 'string') el.innerHTML = renderText(el._ffText);
+    });
+  }
+
+  function closePicker() {
+    if (!pickerEl) return;
+    pickerEl.remove();
+    pickerEl = null;
+    document.removeEventListener('mousedown', pickerOutside, true);
+    document.removeEventListener('keydown', pickerKeys, true);
+  }
+  function pickerOutside(e) {
+    /* 弹窗（新建分组等）本身在面板之外，不能因为点它就关掉面板 */
+    if (e.target.closest && e.target.closest('.modal-backdrop')) return;
+    if (pickerEl && !pickerEl.contains(e.target) && !(pickerEl.__anchor && pickerEl.__anchor.contains(e.target))) closePicker();
+  }
+  function pickerKeys(e) {
+    if (e.key === 'Escape') { closePicker(); }
+  }
+
+  function emojiToast(panel, msg) {
+    const st = panel.querySelector('.ep-status');
+    if (!st) return;
+    st.textContent = msg;
+    clearTimeout(panel.__toastTimer);
+    panel.__toastTimer = setTimeout(() => { st.textContent = ''; }, 2600);
+  }
+
+  async function emojiSquare(file) {
+    const bmp = await new Promise((resolve, reject) => {
+      if (window.createImageBitmap) {
+        createImageBitmap(file).then(resolve, reject);
+      } else {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = reject;
+        img.src = url;
+      }
+    });
+    const S = EMOJI_SIZE;
+    const c = document.createElement('canvas');
+    c.width = S; c.height = S;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    /* 等比缩放到刚好放进正方形，居中留透明边，不裁切不变形 */
+    const r = Math.min(S / bmp.width, S / bmp.height);
+    const w = Math.max(1, Math.round(bmp.width * r));
+    const h = Math.max(1, Math.round(bmp.height * r));
+    g.drawImage(bmp, Math.round((S - w) / 2), Math.round((S - h) / 2), w, h);
+    return c.toDataURL('image/webp', 0.92);
+  }
+
+  async function openEmojiPicker(anchor, opts) {
+    opts = opts || {};
+    const already = pickerEl && pickerEl.__anchor === anchor;
+    closePicker();
+    if (already) return;
+    await loadEmojis();
+    const s = await session();
+    const canEdit = !!(s.user && s.user.status === 'approved');
+    let groupId = (emojiData.groups[0] || {}).id || null;
+    let manage = false;
+
+    const panel = document.createElement('div');
+    panel.className = 'emoji-panel';
+    panel.__anchor = anchor;
+    panel.innerHTML =
+      '<div class="ep-head"><span class="ep-title">表情包</span>' +
+      (canEdit ? '<button class="ep-link" type="button" data-act="manage">管理</button>' : '') +
+      '<button class="ep-link ep-close" type="button" data-act="close" aria-label="关闭">×</button></div>' +
+      '<div class="ep-tabs"></div><div class="ep-grid scan"></div>' +
+      (canEdit ? '<div class="ep-foot"><button class="ep-act" type="button" data-act="upload">＋ 上传表情</button>' +
+        '<button class="ep-act" type="button" data-act="newgroup">＋ 新建分组</button></div>' : '') +
+      '<p class="ep-status" role="status"></p>';
+    document.body.appendChild(panel);
+    pickerEl = panel;
+    panel.style.visibility = 'hidden';
+
+    function tabs() {
+      const box = panel.querySelector('.ep-tabs');
+      box.innerHTML = emojiData.groups.map(g =>
+        '<button class="ep-tab' + (g.id === groupId ? ' on' : '') + '" type="button" data-g="' + g.id + '">' +
+        esc(g.name) + '<i>' + g.count + '</i></button>').join('') || '<span class="ep-hint">还没有分组</span>';
+      if (canEdit && manage && emojiData.groups.length > 1) {
+        box.insertAdjacentHTML('beforeend', '<button class="ep-tab ep-del-g" type="button" data-act="delgroup">删除本组</button>');
+      }
+    }
+
+    function grid() {
+      const box = panel.querySelector('.ep-grid');
+      const list = emojiData.emojis.filter(e => e.groupId === groupId);
+      if (!list.length) {
+        box.innerHTML = '<p class="ep-hint">' + (canEdit ? '这个分组还是空的，点下方「上传表情」加一个。' : '这个分组还没有表情。') + '</p>';
+        return;
+      }
+      box.innerHTML = list.map(e =>
+        '<button class="ep-cell" type="button" data-id="' + e.id + '" title="' + esc(e.name) + '">' +
+        '<img src="' + esc(e.url) + '" alt="' + esc(e.name) + '" loading="lazy" decoding="async">' +
+        '<span class="ep-name">' + esc(e.name) + '</span>' +
+        (canEdit && manage ? '<span class="ep-x" data-del="' + e.id + '" title="删除这个表情">×</span>' : '') +
+        '</button>').join('');
+    }
+
+    function render() { tabs(); grid(); }
+    panel.__refresh = render;
+    render();
+
+    /* 定位：默认贴在触发按钮上方，空间不够就翻到下方 */
+    const r = anchor.getBoundingClientRect();
+    const pw = panel.offsetWidth, ph = panel.offsetHeight;
+    let left = Math.min(Math.max(8, r.left), window.innerWidth - pw - 8);
+    let top = r.top - ph - 8;
+    if (top < 8) top = Math.min(window.innerHeight - ph - 8, r.bottom + 8);
+    panel.style.left = left + 'px';
+    panel.style.top = Math.max(8, top) + 'px';
+    panel.style.visibility = '';
+
+    document.addEventListener('mousedown', pickerOutside, true);
+    document.addEventListener('keydown', pickerKeys, true);
+
+    function newGroup() {
+      const back = openModal(
+        '<h1 style="margin:0 0 4px;font-size:18px;letter-spacing:3px">新建表情分组</h1>' +
+        '<p class="kicker cool">EMOJI GROUP</p>' +
+        '<label class="lab">分组名称（最多 12 字）<input class="field" id="eg-name" maxlength="12" autocomplete="off" placeholder="例如：怪谈生物"></label>' +
+        '<div style="display:flex;gap:10px;margin-top:14px"><button class="btn primary" type="button" id="eg-go">创建</button></div>' +
+        '<p class="status" id="eg-status" role="status"></p>');
+      const st = back.querySelector('#eg-status');
+      const go = async () => {
+        const name = back.querySelector('#eg-name').value.trim();
+        if (!name) { st.textContent = '写个名字吧。'; return; }
+        try {
+          const res = await api('/api/emoji-groups', { body: { name } });
+          applyEmojiData(res.snapshot);
+          const g = emojiData.groups.find(x => x.name === name);
+          if (g) groupId = g.id;
+          back.remove();
+          render();
+        } catch (err) { st.textContent = err.message; }
+      };
+      back.querySelector('#eg-go').onclick = go;
+      back.querySelector('#eg-name').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+      back.querySelector('#eg-name').focus();
+    }
+
+    function upload() {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/png,image/jpeg,image/webp,image/gif';
+      inp.onchange = async () => {
+        const f = inp.files && inp.files[0];
+        if (!f) return;
+        emojiToast(panel, '正在处理…');
+        try {
+          const dataUrl = await emojiSquare(f);
+          const name = (f.name || '表情').replace(/\.[^.]+$/, '').slice(0, 16) || '表情';
+          const res = await api('/api/emojis', { body: { groupId, dataUrl, name } });
+          applyEmojiData(res.snapshot);
+          emojiToast(panel, '已上传');
+          render();
+        } catch (err) { emojiToast(panel, err.message); }
+      };
+      inp.click();
+    }
+
+    panel.addEventListener('click', async e => {
+      const tab = e.target.closest('.ep-tab');
+      const cell = e.target.closest('.ep-cell');
+      const act = e.target.closest('[data-act]');
+      const del = e.target.closest('[data-del]');
+      const delG = e.target.closest('[data-del-g]');
+      if (delG) {
+        const g = emojiData.groups.find(x => x.id === groupId);
+        if (!g) return;
+        if (!confirm('删除分组「' + g.name + '」会连带删掉它里面的 ' + g.count + ' 个表情，确定？')) return;
+        try {
+          const res = await api('/api/emoji-groups/' + encodeURIComponent(groupId), { method: 'DELETE', body: {} });
+          applyEmojiData(res.snapshot);
+          groupId = (emojiData.groups[0] || {}).id || null;
+          render();
+          emojiToast(panel, '分组已删除');
+        } catch (err) { emojiToast(panel, err.message); }
+        return;
+      }
+      if (del) {
+        e.stopPropagation();
+        if (!confirm('删除这个表情？已发出的消息里它会显示成 [表情]。')) return;
+        try {
+          const res = await api('/api/emojis/' + encodeURIComponent(del.dataset.del), { method: 'DELETE', body: {} });
+          applyEmojiData(res.snapshot);
+          render();
+        } catch (err) { emojiToast(panel, err.message); }
+        return;
+      }
+      if (tab && tab.dataset.g) { groupId = Number(tab.dataset.g); render(); return; }
+      if (act) {
+        const a = act.dataset.act;
+        if (a === 'close') { closePicker(); return; }
+        if (a === 'manage') {
+          manage = !manage;
+          act.classList.toggle('on', manage);
+          act.textContent = manage ? '完成' : '管理';
+          render();
+          return;
+        }
+        if (a === 'upload') { if (!groupId) { emojiToast(panel, '先建一个分组'); return; } upload(); return; }
+        if (a === 'newgroup') { newGroup(); return; }
+      }
+      if (cell && !del) {
+        const em = emojiById.get(Number(cell.dataset.id));
+        if (em && opts.onPick) opts.onPick(em);
+      }
+    });
+  }
+
+  return { api, session, esc, fmtTime, renderHeader, sse, openModal, openLogin, showProfile, msgRow, bindProfileClicks, switchAccount,
+    loadEmojis, applyEmojiData, renderText, fillText, refreshEmojiText, openEmojiPicker, closeEmojiPicker: closePicker };
 })();

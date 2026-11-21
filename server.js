@@ -49,6 +49,16 @@ async function loadDb() {
     };
     await save();
   }
+  /* 表情包字段：老数据库没有这两项，补一个「默认」分组，保证第一次打开就能上传 */
+  let emojiInit = false;
+  if (!Array.isArray(DB.emojis)) { DB.emojis = []; emojiInit = true; }
+  if (!Array.isArray(DB.emojiGroups) || !DB.emojiGroups.length) {
+    DB.emojiGroups = [{ id: 1, name: '默认', createdAt: Date.now(), createdBy: null }];
+    emojiInit = true;
+  }
+  if (typeof DB.emojiSeq !== 'number') { DB.emojiSeq = 0; emojiInit = true; }
+  if (typeof DB.emojiGroupSeq !== 'number') { DB.emojiGroupSeq = 1; emojiInit = true; }
+  if (emojiInit) await save();
 }
 const uid = () => Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
 
@@ -336,6 +346,64 @@ function verUrl(url) {
 /* 从可能带 ?v= 的 URL 还原出纯磁盘相对路径（/files/ 之后的部分） */
 function fileRel(url) {
   return String(url || '').split('?')[0].replace(/^\/files\//, '');
+}
+
+/* ---------- 表情包（全站共用，不分账号） ----------
+ * 每个表情固定 256×256 透明底 WebP，只存一份，所有分组下的成员共享。
+ * 聊天消息与帖子正文里的占位符写作 [emoji:<数字id>]，渲染时替换成图片。
+ */
+const EMOJI_SIZE = 256;      // 固定画布尺寸（正方）
+const EMOJI_DIR = 'emojis';
+const EMOJI_MAX = 600;       // 全站上限，防止无限堆积
+
+/* 读 WebP 头拿宽高（VP8X / VP8 / VP8L 三种容器） */
+function webpSize(buf) {
+  if (!buf || buf.length < 30) return null;
+  if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WEBP') return null;
+  const fmt = buf.toString('ascii', 12, 16);
+  if (fmt === 'VP8X') return { w: 1 + buf.readUIntLE(24, 3), h: 1 + buf.readUIntLE(27, 3) };
+  if (fmt === 'VP8 ') {
+    const i = buf.indexOf(Buffer.from([0x9d, 0x01, 0x2a]), 20);
+    if (i < 0 || i + 7 > buf.length) return null;
+    return { w: buf.readUInt16LE(i + 3) & 0x3fff, h: buf.readUInt16LE(i + 5) & 0x3fff };
+  }
+  if (fmt === 'VP8L') {
+    const b = buf.readUInt32LE(21);
+    return { w: (b & 0x3fff) + 1, h: ((b >> 14) & 0x3fff) + 1 };
+  }
+  return null;
+}
+
+function emojiSnapshot() {
+  const groups = (DB.emojiGroups || []).map(g => ({
+    id: g.id, name: g.name,
+    count: (DB.emojis || []).filter(e => e.groupId === g.id).length
+  }));
+  const emojis = (DB.emojis || []).map(e => ({ id: e.id, groupId: e.groupId, name: e.name, url: e.file }));
+  return { size: EMOJI_SIZE, groups, emojis };
+}
+
+/* 写表情文件：一次上传一个文件，删表情时连文件一起删 */
+async function saveEmojiFile(id, buf, ext) {
+  const dir = path.join(FILES, EMOJI_DIR);
+  await fsp.mkdir(dir, { recursive: true });
+  const name = id + '.' + ext;
+  await fsp.writeFile(path.join(dir, name), buf);
+  return '/files/' + EMOJI_DIR + '/' + name;
+}
+
+async function removeEmojiFile(rel) {
+  if (!rel) return;
+  const p = path.join(FILES, fileRel(rel));
+  try { await fsp.unlink(p); } catch (err) { if (err.code !== 'ENOENT') console.warn('[emoji] 删文件失败:', rel, err.message); }
+}
+
+/* 管理权限：登入且已过审的账号都能管理（访客与待审账号不能） */
+function emojiEditor(req) {
+  const u = sessionUser(req);
+  if (!u) throw httpError(401, '请先登入怪啖论坛。');
+  if (u.status !== 'approved') throw httpError(403, '账号审核通过后才能管理表情包。');
+  return u;
 }
 
 /* ---------- 静态服务 ---------- */
@@ -673,6 +741,78 @@ route('POST', /^\/api\/messages$/, async (req, res) => {
 /* 当前在线人数（聊天室展示用） */
 route('GET', /^\/api\/online$/, async (req, res) => {
   sendJSON(res, 200, onlineSnapshot());
+});
+
+/* ---------- 表情包接口（全服务器共用） ---------- */
+route('GET', /^\/api\/emojis$/, async (req, res) => {
+  sendJSON(res, 200, emojiSnapshot());
+});
+
+route('POST', /^\/api\/emoji-groups$/, async (req, res) => {
+  const u = emojiEditor(req);
+  const b = await readJSON(req);
+  const name = requireText(b.name, 12, '分组名称');
+  if ((DB.emojiGroups || []).length >= 20) throw httpError(400, '分组最多 20 个。');
+  if (DB.emojiGroups.some(g => g.name === name)) throw httpError(409, '已有同名分组。');
+  const group = { id: ++DB.emojiGroupSeq, name, createdAt: Date.now(), createdBy: { id: u.id, nickname: u.nickname } };
+  DB.emojiGroups.push(group);
+  await save();
+  broadcast('emojis', emojiSnapshot());
+  sendJSON(res, 200, { ok: true, snapshot: emojiSnapshot() });
+});
+
+route('DELETE', /^\/api\/emoji-groups\/(\d+)$/, async (req, res, m) => {
+  emojiEditor(req);
+  const id = Number(m[1]);
+  const gi = DB.emojiGroups.findIndex(g => g.id === id);
+  if (gi < 0) throw httpError(404, '分组不存在。');
+  if (DB.emojiGroups.length <= 1) throw httpError(400, '至少保留一个分组。');
+  /* 删分组连带删掉组内表情（文件一并清掉），前端会先二次确认 */
+  const doomed = DB.emojis.filter(e => e.groupId === id);
+  DB.emojis = DB.emojis.filter(e => e.groupId !== id);
+  DB.emojiGroups.splice(gi, 1);
+  await save();
+  for (const e of doomed) await removeEmojiFile(e.file);
+  broadcast('emojis', emojiSnapshot());
+  sendJSON(res, 200, { ok: true, removed: doomed.length, snapshot: emojiSnapshot() });
+});
+
+route('POST', /^\/api\/emojis$/, async (req, res) => {
+  const u = emojiEditor(req);
+  const b = await readJSON(req);
+  const gid = Number(b.groupId);
+  if (!DB.emojiGroups.some(g => g.id === gid)) throw httpError(400, '分组不存在。');
+  if ((DB.emojis || []).length >= EMOJI_MAX) throw httpError(400, '表情包总数已达上限（' + EMOJI_MAX + ' 个）。');
+  if (String(b.dataUrl || '').length > 8 * 1024 * 1024) throw httpError(400, '表情包文件过大，请换一张小一点的图。');
+  const { buf, ext } = await decodeUpload(b.dataUrl);
+  /* 尺寸守卫：前端会先画成 256×256 透明画布；绕过前端的请求在这里被挡下 */
+  const size = ext === 'webp' ? webpSize(buf) : null;
+  if (size && (size.w !== EMOJI_SIZE || size.h !== EMOJI_SIZE)) {
+    throw httpError(400, '表情包必须是 ' + EMOJI_SIZE + '×' + EMOJI_SIZE + ' 的正方形，当前是 ' + size.w + '×' + size.h + '。');
+  }
+  const id = ++DB.emojiSeq;
+  const file = await saveEmojiFile(id, buf, ext);
+  const emoji = {
+    id, groupId: gid,
+    name: requireText(b.name || '表情', 16, '表情名称'),
+    file, createdAt: Date.now(), createdBy: { id: u.id, nickname: u.nickname }
+  };
+  DB.emojis.push(emoji);
+  await save();
+  broadcast('emojis', emojiSnapshot());
+  sendJSON(res, 200, { ok: true, emoji: { id, groupId: gid, name: emoji.name, url: file }, snapshot: emojiSnapshot() });
+});
+
+route('DELETE', /^\/api\/emojis\/(\d+)$/, async (req, res, m) => {
+  emojiEditor(req);
+  const id = Number(m[1]);
+  const idx = DB.emojis.findIndex(e => e.id === id);
+  if (idx < 0) throw httpError(404, '表情不存在。');
+  const [gone] = DB.emojis.splice(idx, 1);
+  await save();
+  await removeEmojiFile(gone.file);
+  broadcast('emojis', emojiSnapshot());
+  sendJSON(res, 200, { ok: true, snapshot: emojiSnapshot() });
 });
 
 route('GET', /^\/api\/events$/, async (req, res) => {

@@ -34,7 +34,7 @@
         <div class="reply-target" id="reply-target" hidden></div>
         <form id="reply-form" style="margin-top:14px">
           <textarea class="field" id="reply-text" rows="3" maxlength="2000" placeholder="写下你的评论…"></textarea>
-          <div style="margin-top:8px"><button class="btn primary" type="submit">发送评论</button></div>
+          <div style="margin-top:8px;display:flex;gap:8px"><button class="btn" type="button" id="reply-emoji" title="表情包">表情</button><button class="btn primary" type="submit">发送评论</button></div>
         </form>
       </div>
     </section>
@@ -74,7 +74,7 @@ function render(d) {
     ? '<span class="lock-stripes"></span><span class="lock-label">⛔ 此帖已封锁 · 禁止回复</span><span class="lock-stripes"></span>'
     : '';
   $('replies').classList.toggle('locked-dim', !!t.locked);
-  $('t-body').textContent = t.body;
+  FF.fillText($('t-body'), t.body);
   $('t-images').innerHTML = (t.images || []).map(x => '<img loading="lazy" decoding="async" src="' + FF.esc(x) + '" alt="帖子配图">').join('');
   $('t-body').classList.toggle('del-mark', !!t.deleted);
   $('reply-count').textContent = t.replyCount + ' 条';
@@ -134,7 +134,7 @@ function renderReplies(t, isAdmin, isOwner, logged) {
         (r.pinned ? '<span class="pin-tag">置顶</span>' : '') +
         '<span class="rp-time">' + FF.fmtTime(r.createdAt) + '</span></div>' +
       '</div>' +
-      '<div class="rp-body">' + quote + '<span class="rp-text' + (gone ? ' del-mark' : '') + '">' + FF.esc(r.body) + '</span></div>' +
+      '<div class="rp-body">' + quote + '<span class="rp-text' + (gone ? ' del-mark' : '') + '">' + FF.renderText(r.body) + '</span></div>' +
       ops +
     '</div>';
   }).join('') : '<p class="hint">还没有评论，来抢沙发吧。</p>';
@@ -183,6 +183,19 @@ $('replies').onclick = async e => {
   }
 };
 
+/* 表情包：插在评论光标处 */
+$('reply-emoji').onclick = () => FF.openEmojiPicker($('reply-emoji'), {
+  onPick: em => {
+    const box = $('reply-text');
+    const token = '[emoji:' + em.id + ']';
+    const a = box.selectionStart == null ? box.value.length : box.selectionStart;
+    const b = box.selectionEnd == null ? a : box.selectionEnd;
+    box.value = box.value.slice(0, a) + token + box.value.slice(b);
+    box.focus();
+    box.selectionStart = box.selectionEnd = a + token.length;
+  }
+});
+
 $('reply-form').onsubmit = async e => {
   e.preventDefault();
   const body = $('reply-text').value.trim();
@@ -218,8 +231,10 @@ async function load() {
   await FF.renderHeader();
   FF.bindProfileClicks(document);
   if (!tid) { eatenTakeover(); return; }
+  await FF.loadEmojis();
   await load();
   FF.sse({
+    emojis: d => { FF.applyEmojiData(d); load(); },
     reply: ev => { if (!ev || ev.threadId === tid) load(); },
     like: ev => { if (!ev || ev.threadId === tid) load(); },
     thread: ev => { if (!ev || ev.id === tid) load(); }

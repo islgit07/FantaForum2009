@@ -28,6 +28,7 @@
       </div>
       <form class="chat-input" id="chat-form" hidden>
         <textarea class="field" id="chat-text" maxlength="500" placeholder="说点什么……（Enter 发送，Shift + Enter 换行）"></textarea>
+        <button class="btn" type="button" id="chat-emoji" title="表情包">表情</button>
         <button class="btn primary" type="submit" id="chat-send">发送</button>
       </form>
     </section>
@@ -145,17 +146,37 @@ form.addEventListener('submit', async e => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) return;
+  if (await sendChat(text)) input.value = '';
+});
+
+/* 发一条聊天：文字里可以直接夹 [emoji:id] 占位符 */
+async function sendChat(text) {
   const btn = document.getElementById('chat-send');
   btn.disabled = true;
   try {
     const msg = await FF.api('/api/messages', { body: { text } });
-    input.value = '';
     appendMsg(msg);
     stick = true; log.scrollTop = log.scrollHeight;
+    return true;
   } catch (err) {
     gateStatus.textContent = err.message;
     if (/登入|审核/.test(err.message)) { gate.hidden = false; form.hidden = true; }
+    return false;
   } finally { btn.disabled = false; }
+}
+
+/* 表情包：输入框为空时点一下直接发出去；已有文字则插在光标处 */
+const emojiBtn = document.getElementById('chat-emoji');
+emojiBtn.onclick = () => FF.openEmojiPicker(emojiBtn, {
+  onPick: em => {
+    const token = '[emoji:' + em.id + ']';
+    if (!input.value.trim()) { sendChat(token); return; }
+    const a = input.selectionStart == null ? input.value.length : input.selectionStart;
+    const b = input.selectionEnd == null ? a : input.selectionEnd;
+    input.value = input.value.slice(0, a) + token + input.value.slice(b);
+    input.focus();
+    input.selectionStart = input.selectionEnd = a + token.length;
+  }
 });
 input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
@@ -167,6 +188,7 @@ input.addEventListener('keydown', e => {
   renderGate(s);
   renderMe(s);
   renderMotd(s.config && s.config.motd);
+  await FF.loadEmojis();
   await loadMessages();
   FF.api('/api/online').then(setOnline).catch(() => {});
   FF.sse({
@@ -178,6 +200,7 @@ input.addEventListener('keydown', e => {
       if (old) log.replaceChild(fresh, old);
       else if (msg.id > lastId) { log.appendChild(fresh); lastId = msg.id; if (stick) log.scrollTop = log.scrollHeight; }
     },
+    emojis: d => FF.applyEmojiData(d),
     online: setOnline,
     config: c => renderMotd(c.motd)
   });
