@@ -180,8 +180,8 @@ const FF = (() => {
   }
 
   /* 网站之眼：被注视时睁眼；离开页面时闭眼，标题低语 */
-  const EYE_OPEN = '/assets/openeye.png';
-  const EYE_CLOSED = '/assets/closedeye.png';
+  const EYE_OPEN = '/assets/openeye.webp';
+  const EYE_CLOSED = '/assets/closedeye.webp';
   const REAL_TITLE = document.title;
   const HIDDEN_TITLE = '你似乎想从某处逃离…';
   function setEye(open) {
