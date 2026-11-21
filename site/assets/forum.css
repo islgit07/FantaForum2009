@@ -205,6 +205,9 @@ label.lab .req { color: var(--red-hot); }
 /* 顶栏「切换账号」入口 */
 .switch-link { background: none; border: 1px solid #735c57; padding: 2px 8px; border-radius: 2px; cursor: pointer; }
 .switch-link:hover { color: #ffd9cf; border-color: #ad2217; }
+/* 访客顶栏「登入」：跟「未登入」并排，用红边提高可见度，避免找不到入口 */
+.login-link { color: #ffd9cf; border-color: var(--red-deep); letter-spacing: .2em; }
+.login-link:hover { background: #2a0f0c; border-color: var(--red); }
 /* 同玩家账号切换列表 */
 .acct-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .acct-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; text-align: left; background: #10151c; border: 1px solid #2b3641; color: #d6c3bb; cursor: pointer; border-radius: 2px; }

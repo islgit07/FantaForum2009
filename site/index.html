@@ -138,25 +138,7 @@ function renderGate(s) {
     gateTitle.textContent = '登入怪啖论坛';
   }
 }
-function openLogin() {
-  const back = FF.openModal(
-    '<h1 style="margin:0 0 4px;font-size:20px;letter-spacing:3px">切换账号 / 登入</h1>' +
-    '<p class="kicker cool">LOGIN / CHARACTER + PLAYER</p>' +
-    '<label class="lab">角色名（设卡上的角色名字，也可填网名）<input class="field" id="login-nick" maxlength="24" autocomplete="off"></label>' +
-    '<label class="lab">玩家名（CN / 车主）<input class="field" id="login-player" maxlength="24" autocomplete="off"></label>' +
-    '<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap"><button class="btn primary" type="button" id="login-go">登入</button><a class="btn" href="register.html">还没有账号？去制卡</a></div>' +
-    '<p class="status" id="login-status" role="status"></p>'
-  );
-  const status = back.querySelector('#login-status');
-  back.querySelector('#login-go').onclick = async () => {
-    status.textContent = '正在登入…';
-    try {
-      await FF.api('/api/login', { body: { nickname: back.querySelector('#login-nick').value, playerName: back.querySelector('#login-player').value } });
-      location.reload();
-    } catch (err) { status.textContent = err.message; }
-  };
-  back.querySelector('#login-nick').focus();
-}
+function openLogin() { FF.openLogin(); }
 document.getElementById('gate-login').onclick = doSwitch;
 
 form.addEventListener('submit', async e => {

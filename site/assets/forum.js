@@ -64,11 +64,14 @@ const FF = (() => {
         (key === 'messages' && showDot ? '<i class="nav-dot" aria-hidden="true"></i>' : '') + label + '</a>').join('') +
       '<button type="button" id="music-toggle" aria-pressed="false">音乐：关闭</button>' +
       '<span class="kicker" id="who-chip">' + (s.user ? '登入中：' + esc(s.user.nickname) + (s.user.status !== 'approved' ? '（审核中）' : '') + (s.user.muted ? ' <span class="mute-tag">已禁言</span>' : '') : '未登入') + '</span>' +
-      (s.user ? '<button type="button" id="switch-account-btn" class="kicker switch-link">切换账号</button>' : '') +
+      (s.user ? '<button type="button" id="switch-account-btn" class="kicker switch-link">切换账号</button>'
+        : '<button type="button" id="header-login-btn" class="kicker switch-link login-link">登入</button>') +
       '</nav>';
     initMusic();
     const sw = document.getElementById('switch-account-btn');
     if (sw) sw.onclick = () => switchAccount();
+    const lg = document.getElementById('header-login-btn');
+    if (lg) lg.onclick = () => openLogin();
     const brand = host.querySelector('.brand');
     if (brand) brand.onclick = pokeClick;
   }
@@ -111,6 +114,32 @@ const FF = (() => {
       await api('/api/logout', { method: 'POST', body: {} });
       location.reload();
     };
+  }
+
+  /* 访客登入弹窗：顶栏「登入」按钮与各页面共用 */
+  function openLogin() {
+    const back = openModal(
+      '<h1 style="margin:0 0 4px;font-size:20px;letter-spacing:3px">登入怪啖论坛</h1>' +
+      '<p class="kicker cool">LOGIN / CHARACTER + PLAYER</p>' +
+      '<label class="lab">角色名（设卡上的角色名字，也可填网名）<input class="field" id="login-nick" maxlength="24" autocomplete="off"></label>' +
+      '<label class="lab">玩家名（CN / 车主）<input class="field" id="login-player" maxlength="24" autocomplete="off"></label>' +
+      '<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap"><button class="btn primary" type="button" id="login-go">登入</button><a class="btn" href="register.html">还没有账号？去制卡</a></div>' +
+      '<p class="status" id="login-status" role="status"></p>'
+    );
+    const status = back.querySelector('#login-status');
+    const go = async () => {
+      status.textContent = '正在登入…';
+      try {
+        await api('/api/login', { body: {
+          nickname: back.querySelector('#login-nick').value,
+          playerName: back.querySelector('#login-player').value
+        } });
+        location.reload();
+      } catch (err) { status.textContent = err.message; }
+    };
+    back.querySelector('#login-go').onclick = go;
+    back.querySelector('#login-player').onkeydown = e => { if (e.key === 'Enter') go(); };
+    back.querySelector('#login-nick').focus();
   }
 
   /* 背景音乐：点按钮弹选歌菜单；点当前歌=播放/暂停，点别的歌=切换并播放 */
@@ -347,5 +376,5 @@ const FF = (() => {
     else { pokeStage = 2; pokeModal('哼，还戳？生气了 不理你了 :-<'); }
   }
 
-  return { api, session, esc, fmtTime, renderHeader, sse, openModal, showProfile, msgRow, bindProfileClicks, switchAccount };
+  return { api, session, esc, fmtTime, renderHeader, sse, openModal, openLogin, showProfile, msgRow, bindProfileClicks, switchAccount };
 })();
