@@ -224,6 +224,7 @@ async function loadGuestbook() {
     renderSheet(u);
     /* 「???」的档案页是陷阱：没有人设卡和评论区，点「查看人设卡」会看到它 */
     if (u.nickname === '???') {
+      FF.startUnknownGlitch();
       $('guestbook-win').hidden = true;
       const origin = $('origin-card');
       origin.hidden = false;

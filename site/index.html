@@ -113,7 +113,7 @@ function renderMe(s) {
   const u = s.user;
   meBox.innerHTML =
     '<div class="me-row"><img src="' + FF.esc(u.avatar || '') + '" alt="头像"><div><div class="name">' + FF.esc(u.nickname) + '</div>' +
-    '<div class="hint">' + (u.status === 'approved' ? '已通过审核' : u.status === 'pending' ? '审核中' : '未通过审核') + '</div></div></div>' +
+    '<div class="hint">' + FF.statusText(u) + '</div></div></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><a class="btn" href="me.html">我的主页</a><button class="btn ghost" type="button" id="side-switch">切换账号</button></div>';
   document.getElementById('side-switch').onclick = doSwitch;
 }

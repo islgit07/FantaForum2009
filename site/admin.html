@@ -76,7 +76,7 @@ function htmlUsers() {
       '<td>' + (u.avatar ? '<img class="thumb" loading="lazy" decoding="async" src="' + FF.esc(u.avatar) + '" data-view="' + FF.esc(u.avatar) + '" data-view-title="头像 · ' + FF.esc(u.nickname) + '" alt="头像（点击查看）">' : '') + '</td>' +
       '<td><b style="color:#ffd9cf">' + FF.esc(u.nickname) + '</b><br><span class="hint">玩家 ' + FF.esc(u.playerName) + '</span><br><span class="hint">' + FF.esc((u.public || {}).signature || '') + '</span></td>' +
       '<td>' + factionText(u.faction, u) + '</td>' +
-      '<td>' + (STATUS_TEXT[u.status] || u.status) + '<br><span class="hint">' + FF.fmtTime(u.createdAt) + '</span></td>' +
+      '<td>' + (FF.isUnknownUser(u) ? '未通过审核' : (STATUS_TEXT[u.status] || u.status)) + '<br><span class="hint">' + FF.fmtTime(u.createdAt) + '</span></td>' +
       '<td><div class="actions">' +
       '<button class="btn" type="button" data-edituser="' + u.id + '">编辑档案</button>' +
       (u.card ? '<button class="btn" type="button" data-view="' + FF.esc(u.card) + '" data-view-title="设卡 · ' + FF.esc(u.nickname) + '">查看设卡</button>' : '') +

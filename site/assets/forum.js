@@ -26,6 +26,60 @@ const FF = (() => {
     return sessionCache;
   }
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  /* Unknown 组：状态只是文字装饰，实际权限仍按 status 走（他们照常发帖回复） */
+  const isUnknownUser = u => String((u && u.playerName) || '').toLowerCase() === 'unknown';
+  const statusText = (u, short) => {
+    if (isUnknownUser(u)) return '未通过审核';
+    if (!u) return short ? '已驳回' : '未通过审核';
+    if (u.status === 'approved') return short ? '已过审' : '已通过审核';
+    if (u.status === 'pending') return '审核中';
+    return short ? '已驳回' : '未通过审核';
+  };
+
+  /* Unknown 组故障特效：纯视觉，不拦截点击、不改内容。定时抖一下 + 偶尔乱码字样 */
+  const GLITCH_CHARS = '▓▒░@#$%&*?/\\|<>=+~^※×';
+  let glitchOn = false;
+  function startUnknownGlitch() {
+    if (glitchOn) return;
+    glitchOn = true;
+    document.body.classList.add('unknown-glitch');
+    const layer = document.createElement('div');
+    layer.className = 'glitch-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(layer);
+    const targets = () => Array.from(document.querySelectorAll(
+      '.brand, .section-name, .kicker, .bar-title, .win-bar span, h1, h2, h3, .name, .hint, .btn, nav a, .ps-tag'
+    )).filter(e => e.children.length === 0 && e.textContent.trim().length > 1);
+    const scramble = () => {
+      const els = targets().sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
+      els.forEach(e => {
+        const original = e.textContent;
+        const garbled = Array.from(original).map(ch =>
+          ch.trim() && Math.random() < 0.45 ? GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)] : ch
+        ).join('');
+        e.classList.add('glitch-scramble');
+        e.textContent = garbled;
+        setTimeout(() => {
+          if (e.isConnected && e.textContent === garbled) e.textContent = original;
+          e.classList.remove('glitch-scramble');
+        }, 240 + Math.random() * 420);
+      });
+    };
+    const shake = () => {
+      document.body.classList.add('glitch-shake');
+      setTimeout(() => document.body.classList.remove('glitch-shake'), 300);
+      if (Math.random() < 0.6) {
+        document.body.classList.add('glitch-flash');
+        setTimeout(() => document.body.classList.remove('glitch-flash'), 420);
+      }
+    };
+    const loop = () => setTimeout(() => {
+      shake();
+      if (Math.random() < 0.75) scramble();
+      loop();
+    }, 4500 + Math.random() * 8000);
+    loop();
+  }
   const TANZHU_ID = 'mwowhihsc56eb23a';
   const adminBadge = id => id === TANZHU_ID ? '<span class="admin-tag">管理员</span>' : '';
   const pad = n => String(n).padStart(2, '0');
@@ -53,8 +107,9 @@ const FF = (() => {
     const s = await session();
     const showDot = !!(s.user && s.unread > 0 && document.body.dataset.section !== 'messages');
     const nav = NAV.map(x => x.slice());
-    if (s.user && String(s.user.playerName || '').toLowerCase() === 'unknown') {
+    if (s.user && isUnknownUser(s.user)) {
       for (const item of nav) if (item[2] === 'register') item[1] = '诡异入侵';
+      startUnknownGlitch();
     }
     if (s.user && s.user.playerName === 'admin') nav.push(['admin.html', '管理后台', 'admin']);
     host.className = 'site-header';
@@ -66,7 +121,7 @@ const FF = (() => {
         '<a href="' + href + '"' + (key === active ? ' class="active"' : '') + '>' +
         (key === 'messages' && showDot ? '<i class="nav-dot" aria-hidden="true"></i>' : '') + label + '</a>').join('') +
       '<button type="button" id="music-toggle" aria-pressed="false">音乐：关闭</button>' +
-      '<span class="kicker" id="who-chip">' + (s.user ? '登入中：' + esc(s.user.nickname) + (s.user.status !== 'approved' ? '（审核中）' : '') + (s.user.muted ? ' <span class="mute-tag">已禁言</span>' : '') : '未登入') + '</span>' +
+      '<span class="kicker" id="who-chip">' + (s.user ? '登入中：' + esc(s.user.nickname) + (isUnknownUser(s.user) ? '（未通过审核）' : (s.user.status !== 'approved' ? '（审核中）' : '')) + (s.user.muted ? ' <span class="mute-tag">已禁言</span>' : '') : '未登入') + '</span>' +
       (s.user ? '<button type="button" id="switch-account-btn" class="kicker switch-link">切换账号</button>'
         : '<button type="button" id="header-login-btn" class="kicker switch-link login-link">登入</button>') +
       '</nav>';
@@ -89,7 +144,7 @@ const FF = (() => {
       '<button type="button" class="acct-item' + (a.current ? ' current' : '') + '" data-id="' + esc(a.id) + '"' + (a.current ? ' disabled' : '') + '>' +
         '<img src="' + esc(a.avatar || '') + '" alt="">' +
         '<span class="acct-name">' + esc(a.nickname) + (a.current ? ' <em>（当前）</em>' : '') + '</span>' +
-        '<span class="acct-status">' + (a.status === 'approved' ? '已过审' : '审核中') + '</span>' +
+        '<span class="acct-status">' + statusText(a, true) + '</span>' +
         '<span class="acct-go">' + (a.current ? '✓' : '切换 ›') + '</span>' +
       '</button>').join('');
     const back = openModal(
@@ -655,6 +710,6 @@ const FF = (() => {
     });
   }
 
-  return { api, session, esc, fmtTime, renderHeader, sse, openModal, openLogin, showProfile, msgRow, bindProfileClicks, switchAccount,
+  return { api, session, esc, isUnknownUser, statusText, startUnknownGlitch, fmtTime, renderHeader, sse, openModal, openLogin, showProfile, msgRow, bindProfileClicks, switchAccount,
     loadEmojis, applyEmojiData, renderText, fillText, refreshEmojiText, openEmojiPicker, closeEmojiPicker: closePicker };
 })();
