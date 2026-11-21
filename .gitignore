@@ -28,5 +28,6 @@ parse_renamed_cards.py
 node_modules/
 .DS_Store
 Thumbs.db
-*.tmp_last_backup.txt
+*.tmp
+_last_backup.txt
 srv_md5.txt
