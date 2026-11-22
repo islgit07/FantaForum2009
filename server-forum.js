@@ -630,8 +630,11 @@ module.exports = function installForum(ctx) {
     const owner = DB.threads.find(t => (t.replies || []).some(r => r.id === m[1]));
     if (!owner) throw httpError(404, '未找到该回复。');
     const r = owner.replies.find(x => x.id === m[1]);
+    if (r.deleted) throw httpError(400, '该评论已删除。');
     const a = actorOf(req);
-    const isAdminUser = a.role === 'admin';
+    /* 管理员角色卡也算管理员：与前端 me.admin / isAdmin(req) 的判定保持一致。
+     * 这里只认管理员角色卡或后台会话，不把残留 ff_admin cookie 的普通账号算进去。 */
+    const isAdminUser = a.role === 'admin' || isAdminRole(sessionUser(req));
     if (!isAdminUser && a.id !== r.authorId && a.id !== owner.authorId) {
       throw httpError(403, '只有回复者、帖主或管理员可以删除。');
     }
