@@ -118,7 +118,7 @@ function renderSheet(u) {
       '<div class="ps-body">' +
         '<div class="ps-identity">' +
           '<img class="ps-avatar" src="' + FF.esc(u.avatar || '') + '" alt="头像">' +
-          '<div><h1>' + FF.esc(u.nickname) + (u.muted ? ' <span class="mute-tag">已禁言</span>' : '') + '</h1>' +
+          '<div><h1>' + FF.esc(u.nickname) + (u.banned ? ' <span class="ban-tag">已禁封</span>' : '') + (u.muted ? ' <span class="mute-tag">已禁言</span>' : '') + '</h1>' +
           '<div class="kicker cool">PLAYER / ' + FF.esc(u.playerName || '（匿名）') + '</div></div>' +
         '</div>' +
         '<div class="ps-cols">' +

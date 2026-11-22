@@ -17,6 +17,8 @@ const installRoot = require('./server-root');
 
 const ROOT = __dirname;
 const SITE = path.join(ROOT, 'site');
+/* 禁封账号统一替换为封号头像（新增：禁封功能） */
+const BANNED_AVATAR = '/assets/banned.svg';
 const TOOL_CARD = path.join(ROOT, '怪啖论坛制卡工具');
 const TOOL_GUAI = path.join(ROOT, '怪谈档案制卡工具');
 const DATA = path.resolve(process.env.FANTA_DATA || path.join(ROOT, 'data'));
@@ -141,7 +143,10 @@ function sessionUser(req) {
   const token = cookies(req).ff_session;
   const s = token && DB.sessions[token];
   if (!s || s.admin) return null;
-  return DB.users.find(u => u.id === s.userId) || null;
+  const u = DB.users.find(x => x.id === s.userId);
+  /* 禁封账号视为未登入：所有发言/发帖/改资料接口统一拦住（新增：禁封功能） */
+  if (!u || u.banned) return null;
+  return u;
 }
 /* 拥有管理员权限的角色卡：admin 卡与「管理员」卡。
  * 按 id 白名单判定（防冒充）；玩家名为 admin 的角色卡同样视为管理员，便于日后新增同玩家卡。
@@ -168,7 +173,10 @@ function publicUser(u) {
   const muted = !!u.mutedUntil && Date.now() < u.mutedUntil;
   return {
     id: u.id, nickname: u.nickname, playerName: u.playerName || '',
-    avatar: u.avatar, status: u.status,
+    /* 禁封账号展示封号头像，并带 banned 标记供前端显示「已禁封」（新增：禁封功能） */
+    avatar: u.banned ? BANNED_AVATAR : u.avatar,
+    banned: !!u.banned,
+    status: u.status,
     muted, mutedUntil: muted ? u.mutedUntil : null,
     noProfile: isNoProfileUser(u),
     public: u.public, portrait: u.portrait || null, card: u.card || null, createdAt: u.createdAt
@@ -270,13 +278,41 @@ function addMessage(kind, payload) {
      /api/messages 读取时仍按当前账号状态重算，避免这里存的标记过期。 */
   if (msg.kind === 'chat' && msg.userId) {
     const u = DB.users.find(x => x.id === msg.userId);
-    if (u) { msg.noProfile = isNoProfileUser(u); msg.muted = isMutedUser(u); }
+    if (u) {
+      msg.noProfile = isNoProfileUser(u); msg.muted = isMutedUser(u);
+      /* 禁封账号发出的聊天消息直接按已清除处理，实时广播也一致（新增：禁封功能） */
+      if (u.banned) {
+        msg.banned = true;
+        msg.bannedCleared = true;
+        msg.avatar = BANNED_AVATAR;
+        msg.text = '【已清除】';
+      }
+    }
   }
   DB.messages.push(msg);
   if (DB.messages.length > 5000) DB.messages.splice(0, DB.messages.length - 5000);
   save();
   broadcast('message', msg);
   return msg;
+}
+
+/* 禁封账号：撤销会话，并把该账号的历史聊天/帖子/评论打上有痕清除标记（新增：禁封功能） */
+function applyUserBan(u, banned) {
+  banned = !!banned;
+  if (u.banned === banned) return;
+  u.banned = banned;
+  if (!banned) return; // 解封不恢复已清除的内容，避免旧内容复活
+  for (const [token, s] of Object.entries(DB.sessions)) if (s.userId === u.id) delete DB.sessions[token];
+  for (const m of DB.messages || []) {
+    if (m.kind === 'chat' && m.userId === u.id) {
+      m.bannedCleared = true;
+      m.avatar = BANNED_AVATAR;
+    }
+  }
+  for (const t of DB.threads || []) {
+    if (t.authorId === u.id) t.bannedCleared = true;
+    for (const r of (t.replies || [])) if (r.authorId === u.id) r.bannedCleared = true;
+  }
 }
 
 /* ---------- 图片 ---------- */
@@ -603,6 +639,8 @@ route('POST', /^\/api\/login$/, async (req, res) => {
     throw httpError(409, '该角色名对应多个账号，请改用网名登入。');
   }
   if (user.status === 'rejected') throw httpError(403, '该账号未通过审核，请联系论坛管理员。');
+  /* 禁封账号禁止登入，弹指定文案（新增：禁封功能） */
+  if (user.banned) throw httpError(403, '对不起，该账号已被封禁');
   const token = crypto.randomBytes(24).toString('hex');
   DB.sessions[token] = { userId: user.id };
   save();
@@ -623,7 +661,7 @@ route('GET', /^\/api\/switch-accounts$/, async (req, res) => {
   if (!u) throw httpError(401, '请先登入怪啖论坛。');
   const playerName = u.playerName || '';
   const accounts = DB.users
-    .filter(x => (x.playerName || '') === playerName && x.status !== 'rejected')
+    .filter(x => (x.playerName || '') === playerName && x.status !== 'rejected' && !x.banned)
     .map(x => Object.assign(publicUser(x), { current: x.id === u.id }));
   sendJSON(res, 200, { playerName, accounts });
 });
@@ -638,6 +676,7 @@ route('POST', /^\/api\/switch-account$/, async (req, res) => {
   if (!target) throw httpError(404, '未找到该账号。');
   if ((target.playerName || '') !== (u.playerName || '')) throw httpError(403, '只能切换到同一玩家名下的账号。');
   if (target.status === 'rejected') throw httpError(403, '该账号未通过审核，无法切换。');
+  if (target.banned) throw httpError(403, '对不起，该账号已被封禁');
   const oldToken = cookies(req).ff_session;
   if (oldToken) delete DB.sessions[oldToken];
   const token = crypto.randomBytes(24).toString('hex');
@@ -755,6 +794,13 @@ route('GET', /^\/api\/messages$/, async (req, res, m, url) => {
     if (u.nickname && u.nickname !== x.nickname) out.nickname = u.nickname;
     out.muted = isMutedUser(u);
     out.noProfile = isNoProfileUser(u);
+    /* 被禁封账号的历史消息统一显示【已清除】+封号头像（新增：禁封功能） */
+    if (u.banned || x.bannedCleared) {
+      out.banned = true;
+      out.bannedCleared = true;
+      out.text = '【已清除】';
+      out.avatar = BANNED_AVATAR;
+    }
     return out;
   });
   sendJSON(res, 200, list);
@@ -1111,6 +1157,8 @@ route('POST', /^\/api\/admin\/users\/([a-z0-9]+)\/edit$/, async (req, res, m) =>
   if ('nickname' in b && b.nickname !== u.nickname) {
     u.nickname = checkNicknameAvailable(b.nickname, u.id);
   }
+  /* 禁封开关：未提交的旧页面不会误解除禁封（新增：禁封功能） */
+  if ('banned' in b) applyUserBan(u, b.banned === true);
   u.public = {
     gender: text(p.gender, 12, '公开性别') || '保密',
     age: text(p.age, 4, '公开年龄'),

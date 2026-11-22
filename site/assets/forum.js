@@ -368,11 +368,11 @@ const FF = (() => {
     const row = document.createElement('div');
     const bodyHtml = () => msg.adminDeleted
       ? '<span class="del-mark">【管理员已删除】</span>'
-      : renderText(msg.text);
+      : (msg.bannedCleared ? '<span class="banned-cleared">【已清除】</span>' : renderText(msg.text));
     /* 记下原文并打标记，表情被删/新增时能原地重绘 */
     const markBody = () => {
       const b = row.querySelector('.body');
-      if (b && !msg.adminDeleted) { b._ffText = String(msg.text == null ? '' : msg.text); b.classList.add('ff-emoji-host'); }
+      if (b && !msg.adminDeleted && !msg.bannedCleared) { b._ffText = String(msg.text == null ? '' : msg.text); b.classList.add('ff-emoji-host'); }
     };
     if (msg.kind === 'system') {
       row.className = 'msg system';
@@ -387,7 +387,7 @@ const FF = (() => {
     row.dataset.id = msg.id;
     row.innerHTML =
       (msg.avatar ? '<img class="avatar" loading="lazy" decoding="async" src="' + esc(msg.avatar) + '" alt="头像"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' : '<span></span>') +
-      '<div><div class="meta"><span class="who"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' + esc(msg.nickname) + '</span>' + (msg.muted ? '<span class="mute-tag">已禁言</span>' : '') + adminBadge(msg.userId) + '<span class="time">' + fmtTime(msg.ts) + '</span></div>' +
+      '<div><div class="meta"><span class="who"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' + esc(msg.nickname) + '</span>' + (msg.banned || msg.bannedCleared ? '<span class="ban-tag">已禁封</span>' : '') + (msg.muted ? '<span class="mute-tag">已禁言</span>' : '') + adminBadge(msg.userId) + '<span class="time">' + fmtTime(msg.ts) + '</span></div>' +
       '<div class="body">' + bodyHtml() + '</div></div>';
     markBody();
     return row;

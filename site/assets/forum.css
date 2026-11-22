@@ -867,6 +867,10 @@ html.crt-mode::after { content: ""; position: fixed; inset: 0; z-index: 250; poi
 /* 禁言灰标 */
 .mute-tag { display: inline-block; padding: 0 5px; margin-left: 5px; border-radius: 3px; background: #3a4552; color: #9aa7b4; font: 10px var(--mono), monospace; vertical-align: 1px; }
 
+/* 禁封灰标与已清除正文（新增：禁封功能） */
+.ban-tag { display: inline-block; padding: 0 5px; margin-left: 5px; border: 1px solid #5a5f66; border-radius: 3px; background: #2b2e33; color: #9ea3aa; font: 10px var(--mono), monospace; vertical-align: 1px; letter-spacing: 1px; }
+.banned-cleared { color: #8a8f97; font-style: italic; letter-spacing: 1px; }
+
 /* 音乐选歌菜单 */
 .music-menu {
   position: fixed; z-index: 10060;

@@ -5,6 +5,9 @@
  */
 'use strict';
 
+/* 禁封账号统一使用封号头像（新增：禁封功能） */
+const BANNED_AVATAR = '/assets/banned.svg';
+
 const INITIAL_CHANNELS = [
   { name: '怪谈故事', desc: '已归档的怪谈与故事档案', order: 1 },
   { name: '公开情报', desc: '公开的情报与线索', order: 2 },
@@ -115,25 +118,30 @@ module.exports = function installForum(ctx) {
   const DELETED_LABEL = '【管理员已删除】';
   /* 实时从档案取「网名」与头像：昵称/头像以用户档案为准，管理员改档案后帖子与评论同步更新。 */
   function resolveIdentity(authorId, fallbackName, fallbackAvatar) {
-    if (authorId === 'admin') return { author: '管理员', avatar: null, muted: false, noProfile: false };
+    if (authorId === 'admin') return { author: '管理员', avatar: null, muted: false, noProfile: false, banned: false };
     const u = authorId && DB.users.find(x => x.id === authorId);
-    if (u) return { author: u.nickname, avatar: u.avatar || fallbackAvatar || null, muted: !!u.mutedUntil && Date.now() < u.mutedUntil, noProfile: isNoProfileUser(u) };
-    return { author: fallbackName || '匿名', avatar: fallbackAvatar || null, muted: false, noProfile: false };
+    /* 禁封账号：头像换成封号头像，并带 banned 标记让前端显示灰色「已禁封」（新增：禁封功能） */
+    if (u && u.banned) return { author: u.nickname, avatar: BANNED_AVATAR, muted: false, noProfile: isNoProfileUser(u), banned: true };
+    if (u) return { author: u.nickname, avatar: u.avatar || fallbackAvatar || null, muted: !!u.mutedUntil && Date.now() < u.mutedUntil, noProfile: isNoProfileUser(u), banned: false };
+    return { author: fallbackName || '匿名', avatar: fallbackAvatar || null, muted: false, noProfile: false, banned: false };
   }
   function publicThread(t, me) {
     const tomb = !!t.deleted;
     /* 匿名帖：显示层固定「匿名」、无头像，不随用户档案变化暴露真实网名 */
-    const ident = tomb ? { author: t.author, avatar: null, muted: false, noProfile: false }
-      : (t.anon ? { author: '匿名', avatar: null, muted: false, noProfile: true }
+    const ident = tomb ? { author: t.author, avatar: null, muted: false, noProfile: false, banned: false }
+      : (t.anon ? { author: '匿名', avatar: null, muted: false, noProfile: true, banned: false }
         : resolveIdentity(t.authorId, t.author, t.avatar));
+    /* 禁封账号的帖子有痕清除：标题/正文变【已清除】，头像换封号头像（新增：禁封功能） */
+    const cleared = !tomb && !!(t.bannedCleared || ident.banned);
     return {
       id: t.id, channelId: t.channelId,
-      title: tomb ? DELETED_LABEL : t.title,
-      body: tomb ? DELETED_LABEL : t.body,
-      images: tomb ? [] : (t.images || []),
+      title: tomb ? DELETED_LABEL : (cleared ? '【已清除】' : t.title),
+      body: tomb ? DELETED_LABEL : (cleared ? '【已清除】' : t.body),
+      images: tomb || cleared ? [] : (t.images || []),
       author: ident.author, authorId: t.authorId, authorMuted: !!ident.muted,
       anon: !tomb && !!t.anon, authorNoProfile: !!ident.noProfile,
-      avatar: ident.avatar,
+      authorBanned: cleared,
+      avatar: cleared ? BANNED_AVATAR : ident.avatar,
       createdAt: t.createdAt, updatedAt: t.updatedAt,
       likes: tomb ? 0 : (t.likes || []).length, likedByMe: false,
       replies: tomb ? [] : (t.replies || []).slice().sort((a, b) =>
@@ -149,13 +157,17 @@ module.exports = function installForum(ctx) {
   function publicReply(r) {
     const ident = resolveIdentity(r.authorId, r.author, r.avatar);
     const gone = !!r.deleted;
+    /* 禁封账号的评论有痕清除：正文变【已清除】，头像换封号头像（新增：禁封功能） */
+    const cleared = !gone && !!(r.bannedCleared || ident.banned);
     /* 回复对象的名字按 authorId 实时解析网名，避免改名后引用行显示旧名 */
     const rtIdent = (r.replyTo && !gone) ? resolveIdentity(r.replyTo.authorId, r.replyTo.author, null) : null;
     return {
-      id: r.id, authorId: r.authorId, author: ident.author, authorMuted: gone ? false : !!ident.muted, avatar: gone ? null : ident.avatar,
+      id: r.id, authorId: r.authorId, author: ident.author, authorMuted: gone ? false : !!ident.muted,
+      avatar: gone ? null : (cleared ? BANNED_AVATAR : ident.avatar),
       authorNoProfile: !!ident.noProfile,
+      authorBanned: cleared,
       floor: r.floor,
-      body: gone ? ('【' + ((r.deletedBy && r.deletedBy.name) || '某人') + '已删除评论】') : r.body,
+      body: gone ? ('【' + ((r.deletedBy && r.deletedBy.name) || '某人') + '已删除评论】') : (cleared ? '【已清除】' : r.body),
       createdAt: r.createdAt,
       likes: gone ? 0 : (r.likes || []).length, likedByMe: false,
       pinned: gone ? false : !!r.pinned, pinnedBy: gone ? null : (r.pinnedBy || null),

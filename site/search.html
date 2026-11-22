@@ -60,7 +60,7 @@ function userCard(u, q) {
     ? '<img class="su-avatar" loading="lazy" decoding="async" src="' + FF.esc(u.avatar) + '" alt="头像">'
     : '<span class="su-avatar avatar-ph">' + FF.esc(String(u.nickname || '?').slice(0, 1)) + '</span>';
   return '<a class="su-card" href="profile.html?id=' + FF.esc(u.id) + '">' + avatar +
-    '<span class="su-main"><b>' + hl(u.nickname, q) + '</b>' +
+    '<span class="su-main"><b>' + hl(u.nickname, q) + '</b>' + (u.banned ? ' <span class="ban-tag">已禁封</span>' : '') +
     '<span class="su-sub">玩家 ' + hl(u.playerName || '（匿名）', q) + (u.signature ? ' · ' + hl(u.signature, q) : '') + '</span></span>' +
     '<span class="su-go">查看主页 →</span></a>';
 }
@@ -70,7 +70,7 @@ function suggestCard(u) {
     ? '<img class="sg-avatar" loading="lazy" decoding="async" src="' + FF.esc(u.avatar) + '" alt="头像">'
     : '<span class="sg-avatar avatar-ph">' + FF.esc(String(u.nickname || '?').slice(0, 1)) + '</span>';
   return '<a class="sg-card" href="profile.html?id=' + FF.esc(u.id) + '">' + avatar +
-    '<span class="sg-main"><b>' + FF.esc(u.nickname) + '</b></span></a>';
+    '<span class="sg-main"><b>' + FF.esc(u.nickname) + '</b>' + (u.banned ? ' <span class="ban-tag">已禁封</span>' : '') + '</span></a>';
 }
 /* 一次性彩蛋：首个推荐突然变成 unknown 角色，1 秒后网页震一下并悄悄复原 */
 async function maybeSuggestEaster() {

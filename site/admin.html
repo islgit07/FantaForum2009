@@ -76,7 +76,7 @@ function htmlUsers() {
       '<td>' + (u.avatar ? '<img class="thumb" loading="lazy" decoding="async" src="' + FF.esc(u.avatar) + '" data-view="' + FF.esc(u.avatar) + '" data-view-title="头像 · ' + FF.esc(u.nickname) + '" alt="头像（点击查看）">' : '') + '</td>' +
       '<td><b style="color:#ffd9cf">' + FF.esc(u.nickname) + '</b><br><span class="hint">玩家 ' + FF.esc(u.playerName) + '</span><br><span class="hint">' + FF.esc((u.public || {}).signature || '') + '</span></td>' +
       '<td>' + factionText(u.faction, u) + '</td>' +
-      '<td>' + (FF.isUnknownUser(u) ? '未通过审核' : (STATUS_TEXT[u.status] || u.status)) + '<br><span class="hint">' + FF.fmtTime(u.createdAt) + '</span></td>' +
+      '<td>' + (u.banned ? '<span class="ban-tag">已禁封</span><br>' : '') + (FF.isUnknownUser(u) ? '未通过审核' : (STATUS_TEXT[u.status] || u.status)) + '<br><span class="hint">' + FF.fmtTime(u.createdAt) + '</span></td>' +
       '<td><div class="actions">' +
       '<button class="btn" type="button" data-edituser="' + u.id + '">编辑档案</button>' +
       (u.card ? '<button class="btn" type="button" data-view="' + FF.esc(u.card) + '" data-view-title="设卡 · ' + FF.esc(u.nickname) + '">查看设卡</button>' : '') +
@@ -286,6 +286,8 @@ function openUserEdit(u) {
   const back = FF.openModal(
     '<h3 style="margin:0 0 8px;color:#ff5940;letter-spacing:2px">编辑用户档案 · ' + FF.esc(u.nickname) + '</h3>' +
     '<label class="lab">网名（网站显示名）<input class="field" id="eu-nickname" maxlength="24" value="' + FF.esc(u.nickname || '') + '"></label>' +
+    '<label class="lab" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="eu-banned"' + (u.banned ? ' checked' : '') + '> 禁封该账号</label>' +
+    '<p class="hint" style="margin:2px 0 10px">禁封后该角色无法登入；其聊天、帖子与评论会显示【已清除】并换成封号头像。</p>' +
     '<div class="pf-uploads">' +
       '<div class="pf-upload-item"><div class="pf-upload-label">头像</div>' +
         '<button type="button" class="pf-upload-box" id="eu-up-avatar-box"><img id="eu-up-avatar-img" src="' + FF.esc(u.avatar || '') + '"' + (u.avatar ? '' : ' hidden') + ' alt="头像预览"><span>点击更换头像</span></button>' +
@@ -336,6 +338,7 @@ function openUserEdit(u) {
     try {
       await FF.api('/api/admin/users/' + u.id + '/edit', { body: {
         nickname: g('eu-nickname'),
+        banned: back.querySelector('#eu-banned').checked,
         public: { gender: g('eu-gender'), age: g('eu-age'), signature: g('eu-signature'), intro: g('eu-intro') },
         archive: { realName: g('eu-realName'), realGender: g('eu-realGender'), realAge: g('eu-realAge'), species: g('eu-species'), height: g('eu-height'), history: g('eu-history') }
       } });

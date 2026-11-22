@@ -86,7 +86,7 @@ function renderThreads(data) {
           (t.pinned ? ' <span class="pin-tag">〔置顶:' + FF.esc(t.pinnedBy && t.pinnedBy.name || '') + '〕</span>' : '') +
           (t.locked ? ' <span class="lock-tag">〔禁止回复〕</span>' : '') + '</a>' +
         '<div class="tr-excerpt">' + FF.esc(excerpt) + '</div>' +
-        '<div class="t-sub">' + author + ' · ' + FF.fmtTime(t.createdAt) + '</div>' +
+        '<div class="t-sub">' + author + (t.authorBanned ? ' <span class="ban-tag">已禁封</span>' : '') + ' · ' + FF.fmtTime(t.createdAt) + '</div>' +
       '</div>' +
       '<div class="t-stats"><span>♥ ' + t.likes + '</span><span>回复 ' + t.replyCount + '</span></div>' +
     '</li>';

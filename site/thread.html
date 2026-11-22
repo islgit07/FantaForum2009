@@ -94,7 +94,7 @@ function render(d) {
     bar.innerHTML =
       '<div class="tm-person">' +
         avatarHtml(t.author, t.avatar, t.authorId, 'tm-avatar', t.anon || t.authorNoProfile) +
-        '<div class="tm-id"><span class="tm-name"' + userAttr(t.authorId, t.anon || t.authorNoProfile) + '>' + FF.esc(t.author) + '</span>' + adminBadge(t.authorId) + (t.authorMuted ? '<span class="mute-tag">已禁言</span>' : '') +
+        '<div class="tm-id"><span class="tm-name"' + userAttr(t.authorId, t.anon || t.authorNoProfile) + '>' + FF.esc(t.author) + '</span>' + (t.authorBanned ? '<span class="ban-tag">已禁封</span>' : '') + adminBadge(t.authorId) + (t.authorMuted ? '<span class="mute-tag">已禁言</span>' : '') +
         '<span class="tm-time">' + FF.fmtTime(t.createdAt) + ' 发布</span></div>' +
       '</div>' +
       '<div class="tm-ops">' + likeBtn + lockBtn + pinBtn + delBtn + '</div>';
@@ -129,7 +129,7 @@ function renderReplies(t, isAdmin, isOwner, logged) {
     return '<div class="reply-item' + (gone ? ' deleted' : '') + (r.pinned ? ' pinned' : '') + '" data-floor="' + r.floor + '">' +
       '<div class="rp-head">' +
         avatarHtml(r.author, r.avatar, r.authorId, 'rp-avatar', r.authorNoProfile) +
-        '<div class="rp-id"><span class="rp-name"' + userAttr(r.authorId, r.authorNoProfile) + '>' + FF.esc(r.author) + '</span>' + adminBadge(r.authorId) + (r.authorMuted ? '<span class="mute-tag">已禁言</span>' : '') +
+        '<div class="rp-id"><span class="rp-name"' + userAttr(r.authorId, r.authorNoProfile) + '>' + FF.esc(r.author) + '</span>' + (r.authorBanned ? '<span class="ban-tag">已禁封</span>' : '') + adminBadge(r.authorId) + (r.authorMuted ? '<span class="mute-tag">已禁言</span>' : '') +
         '<span class="rp-floor">#' + r.floor + '楼</span>' +
         (r.pinned ? '<span class="pin-tag">置顶</span>' : '') +
         '<span class="rp-time">' + FF.fmtTime(r.createdAt) + '</span></div>' +
