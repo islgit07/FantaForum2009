@@ -759,7 +759,8 @@ route('POST', /^\/api\/posts$/, async (req, res) => {
   const pub = b.public === 'no' ? 'no' : 'yes';
   const owner = text(b.owner, 24, '设主') || u.playerName || '';
   const id = uid();
-  const approved = !!DB.config.autoApprovePosts;
+  /* 免审核：投稿点击即提交，直接归档；不再受后台 autoApprovePosts 开关影响 */
+  const approved = true;
   const post = {
     id, type, name, area,
     author: authorText || '匿名', authorId, submitterId: u.id, owner,
@@ -778,7 +779,7 @@ route('POST', /^\/api\/posts$/, async (req, res) => {
   /* 投稿即刻同步一条频道帖子：公开→调查委托，不公开→怪谈故事 */
   const thread = syncPostToForum(post);
   save();
-  if (approved) addMessage('system', { text: '「' + post.author + '」投稿了新怪谈《' + name + '》，已放入怪谈档案。' });
+  if (approved) addMessage('system', { text: '「' + post.author + '」投稿的新怪谈《' + name + '》通过审核，已放入怪谈档案。' });
   broadcast('post', publicPost(post));
   sendJSON(res, 200, { ok: true, status: post.status, post: publicPost(post), threadId: thread ? thread.id : null });
 });

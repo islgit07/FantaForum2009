@@ -157,17 +157,18 @@ module.exports = function installForum(ctx) {
   function publicReply(r) {
     const ident = resolveIdentity(r.authorId, r.author, r.avatar);
     const gone = !!r.deleted;
-    /* 禁封账号的评论有痕清除：正文变【已清除】，头像换封号头像（新增：禁封功能） */
-    const cleared = !gone && !!(r.bannedCleared || ident.banned);
+    /* 封禁优先于删除：被封禁账号的评论统一按「封禁清除」显示，不再显示"已删除评论"。
+       封禁时账号已被撤销会话、内容已被有痕清除，故 deleted 仅作为历史痕迹不再对外呈现。 */
+    const cleared = !!(r.bannedCleared || ident.banned);
     /* 回复对象的名字按 authorId 实时解析网名，避免改名后引用行显示旧名 */
     const rtIdent = (r.replyTo && !gone) ? resolveIdentity(r.replyTo.authorId, r.replyTo.author, null) : null;
     return {
       id: r.id, authorId: r.authorId, author: ident.author, authorMuted: gone ? false : !!ident.muted,
-      avatar: gone ? null : (cleared ? BANNED_AVATAR : ident.avatar),
+      avatar: cleared ? BANNED_AVATAR : (gone ? null : ident.avatar),
       authorNoProfile: !!ident.noProfile,
       authorBanned: cleared,
       floor: r.floor,
-      body: gone ? ('【' + ((r.deletedBy && r.deletedBy.name) || '某人') + '已删除评论】') : (cleared ? '【已清除】' : r.body),
+      body: cleared ? '【已清除】' : (gone ? ('【' + ((r.deletedBy && r.deletedBy.name) || '某人') + '已删除评论】') : r.body),
       createdAt: r.createdAt,
       likes: gone ? 0 : (r.likes || []).length, likedByMe: false,
       pinned: gone ? false : !!r.pinned, pinnedBy: gone ? null : (r.pinnedBy || null),
@@ -176,7 +177,7 @@ module.exports = function installForum(ctx) {
         author: rtIdent ? rtIdent.author : r.replyTo.author,
         floor: r.replyTo.floor
       } : null),
-      deleted: gone, deletedBy: r.deletedBy || null
+      deleted: gone && !cleared, deletedBy: (gone && !cleared) ? (r.deletedBy || null) : null
     };
   }
   function withLikedMe(t, req) {
