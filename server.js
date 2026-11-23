@@ -25,7 +25,7 @@ const DATA = path.resolve(process.env.FANTA_DATA || path.join(ROOT, 'data'));
 const FILES = path.join(DATA, 'files');
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8787);
-const BODY_LIMIT = 48 * 1024 * 1024;
+const BODY_LIMIT = 96 * 1024 * 1024;
 
 /* ---------- 存储 ---------- */
 const DB = { users: [], posts: [], messages: [], sessions: {}, messageSeq: 0, config: null };
@@ -489,7 +489,7 @@ async function decodeUpload(dataUrl) {
   if (!m) throw httpError(400, '图片仅支持 PNG / JPG / WebP 的 base64。');
   const raw = Buffer.from(m[2].replace(/\s/g, ''), 'base64');
   if (!raw.length) throw httpError(400, '图片为空。');
-  if (raw.length > 20 * 1024 * 1024) throw httpError(400, '图片过大（最多 20 MB）。');
+  if (raw.length > 64 * 1024 * 1024) throw httpError(400, '图片过大（最多 64 MB）。');
   if (m[1] === 'webp') return { buf: raw, ext: 'webp' };
   const webp = await cwebpEncode(raw, m[1]);
   if (webp && webp.length < raw.length) return { buf: webp, ext: 'webp' };

@@ -95,8 +95,8 @@ function renderSheet(me) {
 }
 
 async function readImage(file, maxEdge) {
-  if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024)
-    throw new Error('请选择 20 MB 以内的 PNG、JPG 或 WebP 图片。');
+  if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 64 * 1024 * 1024)
+    throw new Error('请选择 64 MB 以内的 PNG、JPG 或 WebP 图片。');
   const url = URL.createObjectURL(file);
   try {
     const img = new Image(); img.src = url; await img.decode();

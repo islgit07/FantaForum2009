@@ -194,7 +194,7 @@ $('#author').addEventListener('input',()=>{$('#author').value=$('#author').value
 function position(){if(!portrait)return;const ratio=Math.min(377/portrait.width,377/portrait.height)*zoom,w=portrait.width*ratio,h=portrait.height*ratio;Object.assign($('#portrait').style,{width:w+'px',height:h+'px',left:(377-w)/2+x+'px',top:(377-h)/2+y+'px'});}
 $('#upload').onclick=$('#replace').onclick=()=>$('#file').click();
 $('#file').onchange=async e=>{const file=e.target.files[0];if(!file)return;const version=++imageVersion;imageLoading=true;try{
-if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>10*1024*1024)throw Error('请选择 10 MB 以内的 PNG、JPG 或 WebP。');
+if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>64*1024*1024)throw Error('请选择 64 MB 以内的 PNG、JPG 或 WebP。');
 const url=URL.createObjectURL(file),img=new Image();try{img.src=url;await img.decode();const canvas=document.createElement('canvas'),ratio=Math.min(1,3000/Math.max(img.width,img.height));canvas.width=Math.round(img.width*ratio);canvas.height=Math.round(img.height*ratio);canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);const data=canvas.toDataURL();const normalized=new Image();normalized.src=data;await normalized.decode();if(version!==imageVersion)return;portrait=normalized;$('#portrait').src=data;$('#portrait').hidden=false;$('#upload').hidden=true;x=y=0;zoom=1;$('#zoom').value=1;position();status.textContent='';}finally{URL.revokeObjectURL(url);}
 }catch(error){status.textContent=error.message;}finally{if(version===imageVersion)imageLoading=false;}};
 $('#zoom').oninput=e=>{zoom=Number(e.target.value);position();};$('#reset').onclick=()=>{x=y=0;zoom=1;$('#zoom').value=1;position();};

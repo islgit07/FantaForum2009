@@ -154,8 +154,8 @@ function setReplyTarget(r) {
 /* 图片压缩（与频道页发帖同款） */
 function readImage(file, maxEdge) {
   return new Promise((resolve, reject) => {
-    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024)
-      return reject(new Error('请选择 20 MB 以内的 PNG / JPG / WebP 图片。'));
+    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 64 * 1024 * 1024)
+      return reject(new Error('请选择 64 MB 以内的 PNG / JPG / WebP 图片。'));
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
