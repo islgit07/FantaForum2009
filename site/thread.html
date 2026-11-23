@@ -55,10 +55,17 @@ let me = null, cur = null, replyTarget = null;
 function userAttr(authorId, no) {
   return (authorId && authorId !== 'admin' && !no) ? ' data-user="' + FF.esc(authorId) + '"' : '';
 }
+/* 头像专用：酒店广告位即使没有主页也可点（data-hotel 决定跳转方式） */
+function avatarAttr(authorId, no) {
+  const hotel = FF.hotelMode(authorId);
+  const clickable = authorId && authorId !== 'admin' && (!no || !!hotel);
+  if (!clickable) return '';
+  return ' data-user="' + FF.esc(authorId) + '"' + (hotel ? ' data-hotel="' + hotel + '"' : '');
+}
 function avatarHtml(author, avatar, authorId, cls, no) {
   return avatar
-    ? '<img class="' + cls + '" src="' + FF.esc(avatar) + '" alt="头像"' + userAttr(authorId, no) + '>'
-    : '<span class="' + cls + ' avatar-ph"' + userAttr(authorId, no) + '>' + FF.esc(String(author || '?').slice(0, 1)) + '</span>';
+    ? '<img class="' + cls + '" src="' + FF.esc(avatar) + '" alt="头像"' + avatarAttr(authorId, no) + '>'
+    : '<span class="' + cls + ' avatar-ph"' + avatarAttr(authorId, no) + '>' + FF.esc(String(author || '?').slice(0, 1)) + '</span>';
 }
 
 function render(d) {

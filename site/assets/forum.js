@@ -8,6 +8,11 @@ const FF = (() => {
     { src: '/assets/music/music-3.mp3', name: '然侕，它 祂 钔 逋止是 故事。' }
   ];
   let sessionCache = null;
+
+  /* 酒店广告位：点头像的跳转规则（only = 直接进广告；both = 既进个人空间又开新标签看广告） */
+  var HOTEL_AD_URL = 'http://45.205.21.52:8080/';
+  var HOTEL_IDS = { 'mwrx020n3f6c94bb': 'both', 'mwqoczel2dfaca80': 'only' };
+  function hotelMode(id) { return HOTEL_IDS[String(id || '')] || ''; }
   let music = null;
   let musicIdx = Math.max(0, Number(localStorage.getItem('ff_music_idx') || 0) || 0) % MUSIC_LIST.length;
 
@@ -544,12 +549,14 @@ const FF = (() => {
       return row;
     }
     const mine = sessionCache && sessionCache.user && sessionCache.user.id === msg.userId;
-    const canClick = !msg.noProfile;
+    const hotel = hotelMode(msg.userId);
+    const canClick = !msg.noProfile || !!hotel;
+    const nameClick = !msg.noProfile;
     row.className = 'msg' + (mine ? ' mine' : '') + (msg.noProfile ? ' no-profile' : '');
     row.dataset.id = msg.id;
     row.innerHTML =
-      (msg.avatar ? '<img class="avatar" loading="lazy" decoding="async" src="' + esc(msg.avatar) + '" alt="头像"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' : '<span></span>') +
-      '<div><div class="meta"><span class="who"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' + esc(msg.nickname) + '</span>' + (msg.level ? '<span class="lv-tag" title="等级 LV' + msg.level + '">LV' + msg.level + '</span>' : '') + (msg.banned || msg.bannedCleared ? '<span class="ban-tag">已禁封</span>' : '') + (msg.muted ? '<span class="mute-tag">已禁言</span>' : '') + adminBadge(msg.userId) + '<span class="time">' + fmtTime(msg.ts) + '</span></div>' +
+      (msg.avatar ? '<img class="avatar" loading="lazy" decoding="async" src="' + esc(msg.avatar) + '" alt="头像"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + (hotel ? ' data-hotel="' + hotel + '"' : '') + '>' : '<span></span>') +
+      '<div><div class="meta"><span class="who"' + (nameClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' + esc(msg.nickname) + '</span>' + (msg.level ? '<span class="lv-tag" title="等级 LV' + msg.level + '">LV' + msg.level + '</span>' : '') + (msg.banned || msg.bannedCleared ? '<span class="ban-tag">已禁封</span>' : '') + (msg.muted ? '<span class="mute-tag">已禁言</span>' : '') + adminBadge(msg.userId) + '<span class="time">' + fmtTime(msg.ts) + '</span></div>' +
       '<div class="body">' + bodyHtml() + '</div></div>';
     markBody();
     return row;
@@ -558,6 +565,10 @@ const FF = (() => {
     root.addEventListener('click', async e => {
       const t = e.target.closest('[data-user]');
       if (!t || !t.dataset.user) return;
+      /* 广告位头像：酒店官方 → 直接进广告；卡尔森 → 先开新标签看广告，再进个人空间 */
+      const ad = t.dataset.hotel || '';
+      if (ad === 'only') { e.preventDefault(); location.href = HOTEL_AD_URL; return; }
+      if (ad === 'both') { try { window.open(HOTEL_AD_URL, '_blank', 'noopener'); } catch (err) {} }
       /* unknown 组角色（匿名/档案馆/广告位）根本无法点击主页；??? 例外（陷阱页） */
       const s = await session();
       if ((s.noProfileIds || []).includes(t.dataset.user)) return;
@@ -940,6 +951,6 @@ const FF = (() => {
   }
 
   return { api, session, esc, isUnknownUser, statusText, startUnknownGlitch, fmtTime, renderHeader, sse, openModal, openBlackMask, maskOverlay, openLogin, showProfile, msgRow, bindProfileClicks, switchAccount,
-    notifyAchievement, askNotifyPermission, notifyState,
+    notifyAchievement, askNotifyPermission, notifyState, hotelMode, HOTEL_AD_URL,
     loadEmojis, applyEmojiData, renderText, fillText, refreshEmojiText, openEmojiPicker, closeEmojiPicker: closePicker };
 })();

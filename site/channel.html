@@ -72,15 +72,17 @@ function renderThreads(data) {
         '<div class="t-main"><span class="del-mark">' + FF.esc(t.title) + '</span>' +
         '<div class="t-sub">该帖子已被删除</div></div></li>';
     }
+    const hotel = FF.hotelMode(t.authorId);
+    const avatarAttr = (hotel && t.authorId) ? ' data-user="' + FF.esc(t.authorId) + '" data-hotel="' + hotel + '"' : userAttr(t);
     const avatar = t.avatar
-      ? '<img class="tr-avatar" loading="lazy" decoding="async" src="' + FF.esc(t.avatar) + '" alt="头像"' + userAttr(t) + '>'
-      : '<span class="tr-avatar ph"' + userAttr(t) + '>' + FF.esc(String(t.author || '?').slice(0, 1)) + '</span>';
+      ? '<img class="tr-avatar" loading="lazy" decoding="async" src="' + FF.esc(t.avatar) + '" alt="头像"' + avatarAttr + '>'
+      : '<span class="tr-avatar ph"' + avatarAttr + '>' + FF.esc(String(t.author || '?').slice(0, 1)) + '</span>';
     const author = (t.authorId && t.authorId !== 'admin')
       ? '<a class="tr-author" href="profile.html?id=' + FF.esc(t.authorId) + '">' + FF.esc(t.author) + '</a>'
       : '<span class="tr-author">' + FF.esc(t.author) + '</span>';
     const excerpt = String(t.body || '').replace(/\[emoji:\d+\]/g, '〔表情〕').replace(/\s+/g, ' ').trim();
     return '<li class="thread-row' + (t.pinned ? ' pinned' : '') + '">' +
-      '<a class="tr-avatar-link" href="' + (t.authorId && t.authorId !== 'admin' ? 'profile.html?id=' + FF.esc(t.authorId) : 'javascript:void(0)') + '">' + avatar + '</a>' +
+      '<a class="tr-avatar-link" href="' + (hotel === 'only' ? FF.esc(FF.HOTEL_AD_URL) : (t.authorId && t.authorId !== 'admin' ? 'profile.html?id=' + FF.esc(t.authorId) : 'javascript:void(0)')) + '">' + avatar + '</a>' +
       '<div class="t-main">' +
         '<a class="t-title" href="thread.html?id=' + FF.esc(t.id) + '">' + FF.esc(t.title) +
           (t.pinned ? ' <span class="pin-tag">〔置顶:' + FF.esc(t.pinnedBy && t.pinnedBy.name || '') + '〕</span>' : '') +
