@@ -110,7 +110,8 @@ async function readImage(file, maxEdge) {
       const webp = canvas.toDataURL('image/webp', maxEdge >= 2000 ? 0.9 : 0.88);
       if (webp.slice(0, 14) === 'data:image/webp') return webp;
     } catch (e) {}
-    return canvas.toDataURL('image/png');
+    /* 兜底编码：照片用 JPEG，避免 PNG 让体积翻好几倍 */
+    return canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.92);
   } finally { URL.revokeObjectURL(url); }
 }
 

@@ -169,7 +169,9 @@ function readImage(file, maxEdge) {
           const webp = c.toDataURL('image/webp', 0.88);
           if (webp.slice(0, 14) === 'data:image/webp') return resolve(webp);
         } catch (e) {}
-        resolve(c.toDataURL('image/png'));
+        /* 不支持 WebP 时：照片退回 JPEG，只有带透明通道的 PNG 才保留 PNG。
+           否则 4MB 的 4K 照片会变成 20MB+ 的 PNG，撞上传上限。 */
+        resolve(c.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.92));
       } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法打开。')); };
