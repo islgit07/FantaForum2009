@@ -26,6 +26,13 @@ const FILES = path.join(DATA, 'files');
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 8787);
 const BODY_LIMIT = 48 * 1024 * 1024;
+/* 图片上传硬限制：请求体 / 解码后原图 / 像素与边长 / 并发转码，
+   防止超大图（含批量上传）把进程内存打满 */
+const IMAGE_BODY_LIMIT = 16 * 1024 * 1024;     // 图片类接口的请求体上限
+const IMAGE_MAX_BYTES = 12 * 1024 * 1024;      // 单张原图上限（解码后）
+const IMAGE_MAX_PIXELS = 40 * 1000 * 1000;     // 总像素上限
+const IMAGE_MAX_EDGE = 12000;                  // 单边像素上限
+const IMAGE_MAX_CONCURRENT = 2;                // 同时处理的图片数
 
 /* ---------- 存储 ---------- */
 const DB = { users: [], posts: [], messages: [], sessions: {}, messageSeq: 0, config: null };
@@ -97,20 +104,32 @@ function sendJSON(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(body);
 }
-function readBody(req) {
+function readBody(req, limit) {
+  const cap = limit || BODY_LIMIT;
   return new Promise((resolve, reject) => {
-    let size = 0; const chunks = [];
+    let size = 0, tooBig = false;
+    const chunks = [];
     req.on('data', c => {
       size += c.length;
-      if (size > BODY_LIMIT) { reject(httpError(413, '内容过大。')); req.destroy(); return; }
+      if (size > cap) {
+        /* 超限后只丢数据、不缓存，等请求发完再回 413：
+           既不会把内存吃满，也不会让客户端在上传中途被掐断（ECONNRESET） */
+        tooBig = true;
+        chunks.length = 0;
+        return;
+      }
       chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => {
+      if (tooBig) { reject(httpError(413, '内容过大。')); return; }
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
     req.on('error', reject);
+    req.on('aborted', () => reject(httpError(400, '请求已中断。')));
   });
 }
-async function readJSON(req) {
-  const raw = await readBody(req);
+async function readJSON(req, limit) {
+  const raw = await readBody(req, limit);
   try { return JSON.parse(raw || '{}'); } catch { throw httpError(400, '请求格式错误。'); }
 }
 function cookies(req) {
@@ -483,13 +502,69 @@ function cwebpEncode(buf, srcExt) {
   });
 }
 
+/* 轻量读取图片尺寸（不解码整张图），用于拦截「像素爆炸」的上传 */
+function imageSize(buf) {
+  if (!buf || buf.length < 24) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {   // PNG
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  }
+  if (buf[0] === 0xff && buf[1] === 0xd8) {                                        // JPEG
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) { i++; continue; }
+      const mk = buf[i + 1];
+      if (mk >= 0xc0 && mk <= 0xcf && mk !== 0xc4 && mk !== 0xc8 && mk !== 0xcc) {
+        return { w: buf.readUInt16BE(i + 7), h: buf.readUInt16BE(i + 5) };
+      }
+      const len = buf.readUInt16BE(i + 2);
+      if (!len) break;
+      i += 2 + len;
+    }
+    return null;
+  }
+  if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+    const fmt = buf.toString('ascii', 12, 16);
+    if (fmt === 'VP8 ') return { w: buf.readUInt16LE(26) & 0x3fff, h: buf.readUInt16LE(28) & 0x3fff };
+    if (fmt === 'VP8L') {
+      const b = buf.readUInt32LE(21);
+      return { w: (b & 0x3fff) + 1, h: ((b >> 14) & 0x3fff) + 1 };
+    }
+    if (fmt === 'VP8X') return { w: buf.readUIntLE(24, 3) + 1, h: buf.readUIntLE(27, 3) + 1 };
+  }
+  return null;
+}
+
+/* 上传并发闸门：同一时刻最多处理 IMAGE_MAX_CONCURRENT 张，避免多张一起转码把内存顶爆 */
+let imgActive = 0; const imgQueue = [];
+async function withUploadSlot(fn) {
+  if (imgActive >= IMAGE_MAX_CONCURRENT) await new Promise(r => imgQueue.push(r));
+  imgActive++;
+  try { return await fn(); }
+  finally { imgActive--; const next = imgQueue.shift(); if (next) next(); }
+}
+
 /* 解析上传的 data URL：非 WebP 一律转码，返回落盘用的 { buf, ext } */
-async function decodeUpload(dataUrl) {
-  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(String(dataUrl || '').trim());
+function decodeUpload(dataUrl) { return withUploadSlot(() => decodeUploadNow(dataUrl)); }
+async function decodeUploadNow(dataUrl) {
+  const str = String(dataUrl || '').trim();
+  /* 先卡 base64 长度，避免为一个超大字符串分配 Buffer */
+  if (str.length > Math.ceil(IMAGE_MAX_BYTES * 4 / 3) + 2048) {
+    throw httpError(413, '图片过大（原图上限 ' + Math.round(IMAGE_MAX_BYTES / 1024 / 1024) + ' MB）。');
+  }
+  const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(str);
   if (!m) throw httpError(400, '图片仅支持 PNG / JPG / WebP 的 base64。');
   const raw = Buffer.from(m[2].replace(/\s/g, ''), 'base64');
   if (!raw.length) throw httpError(400, '图片为空。');
-  if (raw.length > 20 * 1024 * 1024) throw httpError(400, '图片过大（最多 20 MB）。');
+  if (raw.length > IMAGE_MAX_BYTES) {
+    throw httpError(413, '图片过大（原图上限 ' + Math.round(IMAGE_MAX_BYTES / 1024 / 1024) + ' MB）。');
+  }
+  const dim = imageSize(raw);
+  if (dim && (dim.w > 0 && dim.h > 0)) {
+    if (dim.w > IMAGE_MAX_EDGE || dim.h > IMAGE_MAX_EDGE || dim.w * dim.h > IMAGE_MAX_PIXELS) {
+      throw httpError(413, '图片尺寸过大（' + dim.w + '×' + dim.h + '，单边限 ' + IMAGE_MAX_EDGE + 'px、总计限 ' +
+        Math.round(IMAGE_MAX_PIXELS / 1000000) + ' 百万像素）。请压缩后再上传。');
+    }
+  }
   if (m[1] === 'webp') return { buf: raw, ext: 'webp' };
   const webp = await cwebpEncode(raw, m[1]);
   if (webp && webp.length < raw.length) return { buf: webp, ext: 'webp' };
@@ -1013,7 +1088,7 @@ route('POST', /^\/api\/posts\/([a-z0-9]+)\/edit$/, async (req, res, m) => {
   const p = DB.posts.find(x => x.id === m[1]);
   if (!p) throw httpError(404, '未找到该怪谈档案。');
   if (!canEditPost(req, p)) throw httpError(403, '只有该档案的投稿人本人可以编辑。');
-  const b = await readJSON(req);
+  const b = await readJSON(req, IMAGE_BODY_LIMIT);
   p.name = requireText(b.name, 60, '怪谈名称');
   p.area = requireText(b.area, 160, '怪谈影响范围');
   p.mechanism = text(b.mechanism, 300, '怪谈机制');
@@ -1036,7 +1111,7 @@ route('POST', /^\/api\/posts\/([a-z0-9]+)\/masks$/, async (req, res, m) => {
   const p = DB.posts.find(x => x.id === m[1]);
   if (!p) throw httpError(404, '未找到该怪谈档案。');
   if (!canEditPost(req, p)) throw httpError(403, '只有该档案的投稿人本人可以编辑。');
-  const b = await readJSON(req);
+  const b = await readJSON(req, IMAGE_BODY_LIMIT);
   p.masks = normMasks(b.masks);
   p.editedAt = Date.now();
   save();
@@ -1211,7 +1286,7 @@ route('DELETE', /^\/api\/emoji-groups\/(\d+)$/, async (req, res, m) => {
 
 route('POST', /^\/api\/emojis$/, async (req, res) => {
   const u = emojiEditor(req);
-  const b = await readJSON(req);
+  const b = await readJSON(req, IMAGE_BODY_LIMIT);
   const gid = Number(b.groupId);
   if (!DB.emojiGroups.some(g => g.id === gid)) throw httpError(400, '分组不存在。');
   if ((DB.emojis || []).length >= EMOJI_MAX) throw httpError(400, '表情包总数已达上限（' + EMOJI_MAX + ' 个）。');
@@ -1268,7 +1343,7 @@ route('GET', /^\/api\/events$/, async (req, res) => {
 route('POST', /^\/api\/me\/image$/, async (req, res) => {
   const u = sessionUser(req);
   if (!u) throw httpError(401, '请先登入怪啖论坛。');
-  const b = await readJSON(req);
+  const b = await readJSON(req, IMAGE_BODY_LIMIT);
   const slot = SLOT_DIR.users[b.slot] ? b.slot : null;
   if (!slot) throw httpError(400, '不支持的图片位置。');
   const { buf, ext } = await decodeUpload(b.dataUrl);
@@ -1446,7 +1521,7 @@ async function dataUrlOf(filePath) {
 
 route('POST', /^\/api\/admin\/image$/, async (req, res) => {
   needAdmin(req);
-  const b = await readJSON(req);
+  const b = await readJSON(req, IMAGE_BODY_LIMIT);
   const kind = b.kind === 'posts' ? 'posts' : 'users';
   const slot = SLOT_DIR[kind][b.slot] ? b.slot : null;
   if (!slot) throw httpError(400, '不支持的图片位置。');
@@ -1486,7 +1561,7 @@ route('POST', /^\/api\/posts\/([a-z0-9]+)\/image$/, async (req, res, m) => {
   const p = DB.posts.find(x => x.id === m[1]);
   if (!p) throw httpError(404, '未找到该怪谈档案。');
   if (!canEditPost(req, p)) throw httpError(403, '只有该档案的投稿人本人可以编辑。');
-  const b = await readJSON(req);
+  const b = await readJSON(req, IMAGE_BODY_LIMIT);
   const slot = (b.slot === 'card' || b.slot === 'portrait') ? b.slot : null;
   if (!slot) throw httpError(400, '不支持的图片位置，仅可上传卡面或形象。');
   const dir = SLOT_DIR.posts[slot];
@@ -1662,6 +1737,7 @@ const server = http.createServer(async (req, res) => {
     if (res.headersSent) { res.end(); return; }
     const code = err.code && Number.isInteger(err.code) ? err.code : 500;
     if (code === 500) console.error('[server]', err);
+    if (code === 413) { try { res.setHeader('Connection', 'close'); } catch {} }
     sendJSON(res, code, { error: err.message || '服务器错误。' });
   }
 });
