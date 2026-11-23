@@ -28,6 +28,7 @@
       <button class="btn" type="button" data-t="channels">频道管理</button>
       <button class="btn" type="button" data-t="announce">公告管理</button>
       <button class="btn" type="button" data-t="threads">帖子管理</button>
+      <button class="btn" type="button" data-t="quests">委托管理</button>
       <button class="btn" type="button" data-t="system">系统设置</button>
       <button class="btn ghost" type="button" id="a-logout" style="margin-left:auto">退出管理登入</button>
     </div>
@@ -151,6 +152,169 @@ function htmlChannels() {
     '<div class="profile-section"><h3>现有频道</h3><table class="table"><tr><th>名称</th><th>简介</th><th>帖子</th><th>创建时间</th></tr>' +
     (list || '<tr><td colspan="4" class="hint">暂无频道</td></tr>') + '</table></div>';
 }
+
+/* ---------- 委托管理（调查委托模块） ---------- */
+let questAdmin = null;
+let questAdminCover = '';
+
+function questKindTag(q) {
+  return q.kind === 'main'
+    ? '<span class="q-kind main">重要</span>'
+    : '<span class="q-kind side">普通</span>';
+}
+
+function htmlQuests() {
+  if (!questAdmin) return '<p class="hint">读取委托列表…</p>';
+  const rows = questAdmin.map(q =>
+    '<tr>' +
+      '<td><b style="color:#f0d1c6">' + FF.esc(q.title) + '</b><br>' +
+        '<span class="hint">' + FF.esc(q.place || '—') + (q.when ? ' · ' + FF.esc(q.when) : '') + '</span></td>' +
+      '<td>' + questKindTag(q) + '</td>' +
+      '<td>' + (q.status === 'closed' ? '已结案' : '进行中') + '</td>' +
+      '<td>' + FF.esc(q.author || '—') + '</td>' +
+      '<td>' + (q.kind === 'main' ? (q.voteTotal || 0) + ' 票' : '—') + '</td>' +
+      '<td class="hint">' + FF.fmtTime(q.createdAt) + '</td>' +
+      '<td><div class="actions">' +
+        '<button class="btn" type="button" data-quest-edit="' + FF.esc(q.id) + '">编辑</button>' +
+        '<a class="btn" href="quest.html?id=' + FF.esc(q.id) + '" target="_blank" rel="noopener">查看</a>' +
+        '<button class="btn danger" type="button" data-quest-del="' + FF.esc(q.id) + '">删除</button>' +
+      '</div></td>' +
+    '</tr>').join('');
+
+  return '<div class="profile-section"><h3>新建委托</h3>' +
+    '<label class="lab">类型<select class="field" id="aq-kind"><option value="side">普通委托（白色标记）</option><option value="main">重要委托（红色标记）</option></select></label>' +
+    '<label class="lab">委托标题<input class="field" id="aq-title" maxlength="80"></label>' +
+    '<label class="lab">委托图片（可选）<input type="file" id="aq-file" accept="image/png,image/jpeg,image/webp"></label>' +
+    '<label class="lab">委托描述<textarea class="field" id="aq-desc" rows="6" maxlength="4000"></textarea></label>' +
+    '<label class="lab">委托地点<input class="field" id="aq-place" maxlength="120"></label>' +
+    '<label class="lab">委托时间<input class="field" id="aq-when" maxlength="120"></label>' +
+    '<label class="lab">委托要求<input class="field" id="aq-req" maxlength="600"></label>' +
+    '<label class="lab">异轨选项（仅重要委托，一行一个，可留空）<textarea class="field" id="aq-options" rows="3" maxlength="400"></textarea></label>' +
+    '<div style="margin-top:10px"><button class="btn primary" type="button" id="aq-go">发布委托</button></div></div>' +
+    '<div class="profile-section"><h3>现有委托</h3><table class="table">' +
+    '<tr><th>标题</th><th>类型</th><th>状态</th><th>委托人</th><th>投票</th><th>发布</th><th>操作</th></tr>' +
+    (rows || '<tr><td colspan="7" class="hint">还没有委托</td></tr>') + '</table>' +
+    '<p class="hint" style="margin-top:8px">重要委托的发现在这里可改；带投票记录的委托只能改选项文字，不能增删选项。</p></div>';
+}
+
+function bindQuests() {
+  const panel = document.getElementById('panel');
+  if (!questAdmin) {
+    FF.api('/api/quests?status=all')
+      .then(r => { questAdmin = r.quests || []; render(); })
+      .catch(err => { panel.innerHTML = '<p class="hint">' + FF.esc(err.message) + '</p>'; });
+    return;
+  }
+
+  const file = document.getElementById('aq-file');
+  questAdminCover = '';
+  if (file) file.onchange = async () => {
+    const f = file.files[0];
+    if (!f) { questAdminCover = ''; return; }
+    try {
+      questAdminCover = await readImage(f, 2400);
+      statusEl.textContent = '封面已就绪。';
+    } catch (err) { questAdminCover = ''; statusEl.textContent = err.message; }
+  };
+
+  const go = document.getElementById('aq-go');
+  if (go) go.onclick = async () => {
+    const kind = document.getElementById('aq-kind').value;
+    const title = document.getElementById('aq-title').value.trim();
+    const desc = document.getElementById('aq-desc').value.trim();
+    if (!title || !desc) { statusEl.textContent = '请填写委托标题与委托描述。'; return; }
+    const options = document.getElementById('aq-options').value.split('\n').map(x => x.trim()).filter(Boolean);
+    go.disabled = true;
+    try {
+      await FF.api('/api/quests', { body: {
+        kind, title, desc,
+        place: document.getElementById('aq-place').value.trim(),
+        when: document.getElementById('aq-when').value.trim(),
+        requirements: document.getElementById('aq-req').value.trim(),
+        image: questAdminCover || '',
+        options
+      } });
+      statusEl.textContent = '委托已发布。';
+      questAdminCover = '';
+      questAdmin = null;
+      render();
+    } catch (err) { statusEl.textContent = err.message; go.disabled = false; }
+  };
+
+  panel.querySelectorAll('[data-quest-edit]').forEach(b => {
+    b.onclick = () => openQuestEditor(b.dataset.questEdit);
+  });
+  panel.querySelectorAll('[data-quest-del]').forEach(b => {
+    b.onclick = async () => {
+      if (!confirm('确定删除这条委托？删除后列表不再显示。')) return;
+      b.disabled = true; statusEl.textContent = '删除中…';
+      try {
+        await FF.api('/api/quests/' + encodeURIComponent(b.dataset.questDel) + '/delete', { body: {} });
+        statusEl.textContent = '已删除。';
+        questAdmin = null; render();
+      } catch (err) { statusEl.textContent = err.message; b.disabled = false; }
+    };
+  });
+}
+
+async function openQuestEditor(id) {
+  let q;
+  try { q = (await FF.api('/api/quests/' + encodeURIComponent(id))).quest; }
+  catch (err) { statusEl.textContent = err.message; return; }
+  let cover = '';
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 6px;color:#ff5940">编辑委托</h3>' +
+    '<p class="hint" style="margin:0 0 8px">ID ' + FF.esc(q.id) + ' · 委托人 ' + FF.esc(q.author || '—') + '</p>' +
+    '<label class="lab">类型<select class="field" id="eq-kind">' +
+      '<option value="side"' + (q.kind === 'side' ? ' selected' : '') + '>普通委托</option>' +
+      '<option value="main"' + (q.kind === 'main' ? ' selected' : '') + '>重要委托</option></select></label>' +
+    '<label class="lab">状态<select class="field" id="eq-status">' +
+      '<option value="open"' + (q.status === 'open' ? ' selected' : '') + '>进行中</option>' +
+      '<option value="closed"' + (q.status === 'closed' ? ' selected' : '') + '>已结案</option></select></label>' +
+    '<label class="lab">委托标题<input class="field" id="eq-title" maxlength="80" value="' + FF.esc(q.title) + '"></label>' +
+    '<label class="lab">封面<input type="file" id="eq-file" accept="image/png,image/jpeg,image/webp"></label>' +
+    '<div style="margin-top:6px"><img src="' + FF.esc(q.cover) + '" alt="当前封面" style="width:96px;height:96px;object-fit:cover;border:1px solid #ad2217"></div>' +
+    '<label class="lab" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="eq-clear"> 清空封面（用默认图标）</label>' +
+    '<label class="lab">委托描述<textarea class="field" id="eq-desc" rows="7" maxlength="4000">' + FF.esc(q.desc) + '</textarea></label>' +
+    '<label class="lab">委托地点<input class="field" id="eq-place" maxlength="120" value="' + FF.esc(q.place) + '"></label>' +
+    '<label class="lab">委托时间<input class="field" id="eq-when" maxlength="120" value="' + FF.esc(q.when) + '"></label>' +
+    '<label class="lab">委托要求<input class="field" id="eq-req" maxlength="600" value="' + FF.esc(q.requirements) + '"></label>' +
+    '<label class="lab">异轨选项（一行一个，可留空）<textarea class="field" id="eq-options" rows="3" maxlength="400">' +
+      FF.esc((q.votes || []).map(v => v.label).join('\n')) + '</textarea></label>' +
+    '<div style="margin-top:12px;display:flex;gap:8px"><button class="btn primary" type="button" id="eq-go">保存</button></div>' +
+    '<p class="status" id="eq-status-note"></p>', true);
+
+  const file = back.querySelector('#eq-file');
+  file.onchange = async () => {
+    const f = file.files[0];
+    if (!f) { cover = ''; return; }
+    try { cover = await readImage(f, 2400); back.querySelector('#eq-status-note').textContent = '新封面已就绪，保存后生效。'; }
+    catch (err) { cover = ''; back.querySelector('#eq-status-note').textContent = err.message; }
+  };
+
+  back.querySelector('#eq-go').onclick = async () => {
+    const note = back.querySelector('#eq-status-note');
+    const body = {
+      kind: back.querySelector('#eq-kind').value,
+      status: back.querySelector('#eq-status').value,
+      title: back.querySelector('#eq-title').value.trim(),
+      desc: back.querySelector('#eq-desc').value.trim(),
+      place: back.querySelector('#eq-place').value.trim(),
+      when: back.querySelector('#eq-when').value.trim(),
+      requirements: back.querySelector('#eq-req').value.trim(),
+      options: back.querySelector('#eq-options').value.split('\n').map(x => x.trim()).filter(Boolean)
+    };
+    if (back.querySelector('#eq-clear').checked) body.cover = '';
+    else if (cover) body.cover = cover;
+    try {
+      await FF.api('/api/quests/' + encodeURIComponent(q.id) + '/edit', { body });
+      back.remove();
+      statusEl.textContent = '委托已保存。';
+      questAdmin = null; render();
+    } catch (err) { note.textContent = err.message; }
+  };
+}
+
 let announceImg = null;
 function htmlAnnounce() {
   const a = data.announcement;
@@ -191,15 +355,16 @@ function htmlSystem() {
 
 function render() {
   document.getElementById('tab-title').textContent =
-    { overview: '概览', users: '用户档案审核', posts: '怪谈审核', messages: '聊天管理', archives: '存档管理', channels: '频道管理', announce: '公告管理', threads: '帖子管理', system: '系统设置' }[tab];
+    { overview: '概览', users: '用户档案审核', posts: '怪谈审核', messages: '聊天管理', archives: '存档管理', channels: '频道管理', announce: '公告管理', threads: '帖子管理', quests: '委托管理', system: '系统设置' }[tab];
   panel.innerHTML = !data ? '<p class="hint">读取中…</p>' :
     tab === 'overview' ? htmlOverview() : tab === 'users' ? htmlUsers() : tab === 'posts' ? htmlPosts() :
     tab === 'messages' ? htmlMessages() : tab === 'archives' ? htmlArchives() : tab === 'channels' ? htmlChannels() : tab === 'announce' ? htmlAnnounce() :
-    tab === 'threads' ? htmlThreads() : htmlSystem();
+    tab === 'threads' ? htmlThreads() : tab === 'quests' ? htmlQuests() : htmlSystem();
   if (tab === 'system') bindSystem();
   if (tab === 'channels') bindChannels();
   if (tab === 'announce') bindAnnounce();
   if (tab === 'archives') bindArchives();
+  if (tab === 'quests') bindQuests();
 }
 function bindSystem() {
   document.getElementById('cfg-save').onclick = async () => {

@@ -120,6 +120,7 @@ function renderList() {
         '<div class="qi-sub">' + kindTag(q) +
           (q.status === 'closed' ? '<span class="q-kind closed">已结案</span>' : '') +
           (q.kind === 'main' && q.voteTotal ? '<span>投票 ' + q.voteTotal + '</span>' : '') +
+          (q.commentCount ? '<span>评论 ' + q.commentCount + '</span>' : '') +
           (q.place ? '<span>' + FF.esc(q.place) + '</span>' : '') +
         '</div>' +
         '<div class="qi-excerpt">' + FF.esc(q.excerpt || '') + '</div>' +

@@ -1218,3 +1218,24 @@ html.crt-mode::after { content: ""; position: fixed; inset: 0; z-index: 250; poi
   .quest-fields dt { margin-top: 8px; }
   .quest-fields dt:first-child { margin-top: 0; }
 }
+
+/* 委托详情 · 评论 */
+.quest-comments { margin: 18px 0 4px; padding: 14px; border: 1px dashed #4a3532; background: #0b0e1399; }
+.quest-comments h3 { margin: 0 0 10px; font-size: 15px; color: #dedede; letter-spacing: 1px; }
+.quest-comments h3 .cc { font: 12px var(--mono); color: #8b9298; margin-left: 6px; letter-spacing: .06em; }
+.cm-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-top: 1px dashed #26313d; }
+.cm-item:first-child { border-top: 0; padding-top: 0; }
+.cm-avatar { display: block; width: 34px; height: 34px; object-fit: cover; border: 1px solid #3a2a22; background: #0b0e13; }
+.cm-avatar.ph { display: grid; place-items: center; font: 12px var(--mono); color: #8b9298; }
+.cm-main { min-width: 0; }
+.cm-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cm-name { color: #f0d8cc; text-decoration: none; font-size: 13px; }
+.cm-name:hover { color: var(--red-hot); }
+.cm-time { font: 11px var(--mono); color: #7d848a; letter-spacing: .04em; }
+.cm-del { margin-left: auto; padding: 1px 7px; font-size: 11px; }
+.cm-text { margin-top: 3px; color: #dedede; line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
+@media (max-width: 640px) {
+  .quest-comments { padding: 11px; }
+  .cm-item { grid-template-columns: 28px minmax(0, 1fr); gap: 8px; }
+  .cm-avatar { width: 28px; height: 28px; }
+}

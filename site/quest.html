@@ -47,8 +47,17 @@
           <div id="q-vote-list"></div>
         </div>
 
+        <div class="quest-comments" id="q-comments">
+          <h3>评论<span class="cc" id="q-comment-total"></span></h3>
+          <div id="q-comment-list"></div>
+          <label class="lab" for="q-comment-text">发表评论</label>
+          <textarea class="field" id="q-comment-text" rows="3" maxlength="500"></textarea>
+          <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+            <button class="btn primary" type="button" id="q-comment-go">发表评论</button>
+            <span class="hint" id="q-comment-note"></span>
+          </div>
+        </div>
         <div class="toolbar-strip" style="margin-top:16px" id="q-actions">
-          <a class="btn" href="quests.html" id="q-thread">查看原文</a>
           <span class="spacer"></span>
           <button class="btn" type="button" id="q-toggle" hidden>结案</button>
           <button class="btn danger" type="button" id="q-del" hidden>删除</button>
@@ -130,15 +139,57 @@ function render(q) {
     $('q-vote').hidden = true;
   }
 
-  /* 原文 / 操作 */
-  if (q.threadId) { $('q-thread').href = 'thread.html?id=' + encodeURIComponent(q.threadId); }
-  else { $('q-thread').hidden = true; }
+  renderComments(q);
+
+  /* 操作 */
 
   const canManage = !!q.canManage;
   $('q-toggle').hidden = !canManage;
   $('q-del').hidden = !canManage;
   $('q-toggle').textContent = q.status === 'closed' ? '重新开启' : '结案';
   $('q-status-note').textContent = q.status === 'closed' ? '该委托已结案' : '';
+}
+
+function renderComments(q) {
+  const list = q.comments || [];
+  $('q-comment-total').textContent = '（' + (q.commentTotal || 0) + '）';
+  if (!list.length) {
+    $('q-comment-list').innerHTML = '<p class="hint" style="margin:0 0 8px">还没有评论，来说两句。</p>';
+    return;
+  }
+  $('q-comment-list').innerHTML = list.map(c => {
+    const clickable = c.authorId && !c.noProfile;
+    const av = c.avatar
+      ? '<img class="cm-avatar" src="' + FF.esc(c.avatar) + '" alt="头像"' + (clickable ? ' data-user="' + FF.esc(c.authorId) + '"' : '') + '>'
+      : '<span class="cm-avatar ph"' + (clickable ? ' data-user="' + FF.esc(c.authorId) + '"' : '') + '>' + FF.esc(String(c.author || '?').slice(0, 1)) + '</span>';
+    const name = clickable
+      ? '<a class="cm-name" href="profile.html?id=' + FF.esc(c.authorId) + '" data-user="' + FF.esc(c.authorId) + '">' + FF.esc(c.author) + '</a>'
+      : '<span class="cm-name">' + FF.esc(c.author) + '</span>';
+    return '<div class="cm-item">' + av +
+      '<div class="cm-main">' +
+        '<div class="cm-head">' + name + '<span class="cm-time">' + FF.fmtTime(c.createdAt) + '</span>' +
+          (c.canDelete ? '<button class="btn ghost cm-del" type="button" data-cm-del="' + FF.esc(c.id) + '">删除</button>' : '') +
+        '</div>' +
+        '<div class="cm-text">' + FF.esc(c.text) + '</div>' +
+      '</div></div>';
+  }).join('');
+}
+
+async function sendComment() {
+  const box = $('q-comment-text');
+  const text = box.value.trim();
+  if (!text) { $('q-comment-note').textContent = '请先写点内容。'; return; }
+  if (!me || !me.user) { $('q-comment-note').textContent = '请先登入后再发表评论。'; return; }
+  const btn = $('q-comment-go');
+  btn.disabled = true; $('q-comment-note').textContent = '发送中…';
+  try {
+    const out = await FF.api('/api/quests/' + encodeURIComponent(qid) + '/comments', { body: { text } });
+    box.value = '';
+    cur.comments = out.comments; cur.commentTotal = out.commentTotal;
+    renderComments(cur);
+    $('q-comment-note').textContent = '已发表。';
+  } catch (err) { $('q-comment-note').textContent = err.message; }
+  finally { btn.disabled = false; }
 }
 
 async function load() {
@@ -180,6 +231,22 @@ async function vote(optionId) {
       location.href = 'quests.html';
     } catch (e) { $('status').textContent = e.message; }
   };
+  $('q-comment-go').onclick = sendComment;
+  $('q-comment-list').onclick = async e => {
+    const b = e.target.closest('[data-cm-del]');
+    if (!b) return;
+    if (!confirm('删除这条评论？')) return;
+    b.disabled = true;
+    try {
+      const out = await FF.api('/api/quests/comments/' + encodeURIComponent(b.dataset.cmDel) + '/delete', { body: {} });
+      cur.comments = out.comments; cur.commentTotal = out.commentTotal;
+      renderComments(cur);
+    } catch (err) { $('q-comment-note').textContent = err.message; b.disabled = false; }
+  };
+  if (!me || !me.user) {
+    $('q-comment-text').disabled = true;
+    $('q-comment-note').textContent = '登入后可以发表评论。';
+  }
   FF.bindProfileClicks(document);
   await load().catch(err => {
     $('loading').hidden = true;
