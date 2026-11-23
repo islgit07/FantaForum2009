@@ -151,7 +151,12 @@ function eatenTakeover() {
   setTimeout(() => veil.classList.remove('eaten-shake'), 900);
 }
 async function load() {
-  try { renderThreads(await FF.api('/api/channels/' + encodeURIComponent(cid) + '/threads')); }
+  try {
+    const data = await FF.api('/api/channels/' + encodeURIComponent(cid) + '/threads');
+    /* 被独立模块接管的频道（如「调查委托」）直接跳过去，旧链接仍然有效 */
+    if (data.channel && data.channel.route) { location.replace(data.channel.route); return; }
+    renderThreads(data);
+  }
   catch (err) {
     if (/未找到/.test(err.message)) eatenTakeover();
     else $('status').textContent = err.message;

@@ -13,6 +13,7 @@ const os = require('os');
 const { execFile } = require('child_process');
 const zlib = require('zlib');
 const installForum = require('./server-forum');
+const installQuests = require('./server-quest');
 const installRoot = require('./server-root');
 
 const ROOT = __dirname;
@@ -1615,6 +1616,12 @@ const forum = installForum({
   sessionUser, isAdmin, isAdminRole, isNoProfileUser, needAdmin,
   httpError, sendJSON, readJSON, text, requireText, uid,
   FILES, path, fs, fsp, getVisits: todayVisits, unlockAchievement
+});
+
+/* ---------- 调查委托（重要委托 / 普通委托 + 异轨投票） ---------- */
+const quests = installQuests({
+  DB, save, route, broadcast, sessionUser, isAdmin,
+  httpError, sendJSON, readJSON, text, requireText, uid, saveImage
 });
 
 /* ---------- root 服务器监控（独立于 admin，页面 site/root.html） ---------- */

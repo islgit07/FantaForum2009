@@ -151,3 +151,21 @@
   · 通知：被回复人（留言作者）收到「XXX 回复了你在个人空间的留言」站内消息，带内容摘要，点查看跳对方主页。
   · 接口：POST /api/guestbook/:留言id/reply、POST /api/guestbook/:留言id/reply-delete；
     回复列表随 GET /api/guestbook/:用户id 一起返回；变更通过 SSE broadcast 实时同步。
+
+九、调查委托模块（新增）
+  · 入口：导航栏「调查委托」（quests.html），左侧委托列表（预览图 + 标题 + 红/白标记），
+    点任一委托进入二级页面 quest.html?id=… 查看委托详情。
+  · 重要委托（kind=main，红色标记）：主线委托，可由管理员在管理后台会话下发布，
+    带「异轨投票」——登录用户一人一票、可改票，票数占比实时显示；结案后投票关闭。
+  · 普通委托（kind=side，白色标记）：登录用户自行发布，表单字段与教程格式一致：
+    委托图片【】/ 委托描述 / 委托地点 / 委托时间 / 委托要求；可选匿名。
+  · 委托可挂接论坛原帖（threadId），详情页底部「查看原文」直达 thread.html。
+  · 图片：未上传封面时用默认图标 /assets/quest-default.webp；
+    上传封面存 data/files/quest-covers/<委托id>.webp；也接受 https 外链。
+  · 正文图片：renderText 现在除 https 图床直链外，也接受站内 /files/<分类>/<文件名>.(png|jpg|webp)，
+    正文里的旧外链图可转存站内后稳定显示（quest-images 目录）。
+  · 接口：GET /api/quests（列表，?kind=main|side）、GET /api/quests/:id（详情）、
+    POST /api/quests（发布）、POST /api/quests/:id/vote（异轨投票，仅重要委托）、
+    POST /api/quests/:id/status（结案/重开，委托人或管理员）、POST /api/quests/:id/delete（软删）。
+  · 数据：db.json 的 quests 数组 + questSeq；变更经 SSE event: quest 实时同步列表与详情。
+  · 迁移：migrate_quests.py 把「调查委托」频道里的旧求助帖转成普通委托（幂等，按 threadId 去重）。

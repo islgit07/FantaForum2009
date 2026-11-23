@@ -87,7 +87,7 @@ function renderHome(d) {
       '<p>' + FF.esc(a.text) + '</p>' + (a.image ? '<img loading="lazy" decoding="async" src="' + FF.esc(a.image) + '" alt="公告图片">' : '') + '</div>'
     : '<p class="announce-empty">（暂无公告）</p>';
   channelBox.innerHTML = d.channels.length ? d.channels.map(c =>
-    '<a class="chan-card" href="channel.html?id=' + FF.esc(c.id) + '">' +
+    '<a class="chan-card" href="' + (c.route ? FF.esc(c.route) : 'channel.html?id=' + FF.esc(c.id)) + '">' +
       '<h3>' + FF.esc(c.name) + '</h3>' +
       '<div class="desc">' + FF.esc(c.desc || '') + '</div>' +
       '<div class="meta"><span>' + c.count + ' 篇帖子</span>' +

@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/webp" href="/assets/quest-default.webp">
+<title>调查委托 · 怪啖论坛</title>
+<link rel="stylesheet" href="/assets/forum.css">
+</head>
+<body data-section="quests" data-section-name="调查委托">
+<header id="site-header"></header>
+
+<div class="quest-layout">
+  <!-- 左：委托列表 -->
+  <aside class="quest-side">
+    <div class="win">
+      <div class="win-bar">
+        <span class="bar-title">委托列表</span>
+        <span class="bar-sub" id="q-count">COMMISSIONS</span>
+        <span class="corner" aria-hidden="true">×</span>
+      </div>
+      <div class="quest-filters" id="q-filters">
+        <button type="button" data-kind="" class="on">全部</button>
+        <button type="button" data-kind="main">重要</button>
+        <button type="button" data-kind="side">普通</button>
+      </div>
+      <ul class="quest-list" id="quest-list"></ul>
+    </div>
+  </aside>
+
+  <!-- 右：说明 / 教程 -->
+  <main>
+    <h1 class="page-title">调查委托<span class="en">INVESTIGATION</span></h1>
+
+    <div class="win">
+      <div class="win-bar">
+        <span class="bar-title">委托须知</span>
+        <span class="bar-sub">HOW IT WORKS</span>
+        <span class="corner" aria-hidden="true">×</span>
+      </div>
+      <div class="win-body quest-intro">
+        <div class="quest-legend">
+          <span><i class="dot-main"></i>重要委托（主线）</span>
+          <span><i class="dot-side"></i>普通委托（支线）</span>
+        </div>
+        <p>左侧是委托列表，由标题和预览图组成，选择想要了解的委托，进入二级页面即可了解委托详情。</p>
+        <p><b style="color:#ff8a74">重要委托（主线）</b>会用红色标记，其往往比较紧急，需要立即前往委托地点进行调查，您的选择（异轨投票）会对委托结果产生决定性影响。</p>
+        <p><b>普通委托（支线）</b>则是白色标记，是由用户自行发布的类型多样的委托。发布格式：</p>
+        <div class="quote">委托图片【】
+委托描述：__________________________
+委托地点：_______________
+委托时间：_______________
+委托要求：_______________</div>
+      </div>
+    </div>
+
+    <div class="toolbar-strip">
+      <button class="btn primary" type="button" id="new-quest">发布普通委托</button>
+      <span class="spacer"></span>
+      <a class="btn" href="home.html">回主页</a>
+    </div>
+    <p class="status" id="status" role="status"></p>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const DEFAULT_COVER = '/assets/quest-default.webp';
+let me = null;
+let kindFilter = '';
+let cache = [];
+
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 64 * 1024 * 1024)
+      return reject(new Error('请选择 64 MB 以内的 PNG / JPG / WebP 图片。'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxEdge = 2400;
+        const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        try {
+          const webp = c.toDataURL('image/webp', 0.9);
+          if (webp.slice(0, 14) === 'data:image/webp') return resolve(webp);
+        } catch (e) {}
+        resolve(c.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.92));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法打开。')); };
+    img.src = url;
+  });
+}
+
+function kindTag(q) {
+  if (q.kind === 'main') return '<span class="q-kind main">重要委托</span>';
+  return '<span class="q-kind side">普通委托</span>';
+}
+
+function renderList() {
+  const list = cache;
+  $('q-count').textContent = 'COMMISSIONS / ' + list.length;
+  const box = $('quest-list');
+  if (!list.length) {
+    box.innerHTML = '<li class="hint" style="padding:14px 6px;list-style:none">' +
+      (kindFilter === 'main' ? '当前没有重要委托。' : '当前没有委托，来发布第一条吧。') + '</li>';
+    return;
+  }
+  box.innerHTML = list.map(q =>
+    '<li><a class="quest-item ' + q.kind + (q.status === 'closed' ? ' closed' : '') + '" href="quest.html?id=' + FF.esc(q.id) + '">' +
+      '<img class="quest-thumb" loading="lazy" decoding="async" src="' + FF.esc(q.cover || DEFAULT_COVER) + '" alt="委托预览">' +
+      '<div>' +
+        '<div class="qi-title">' + FF.esc(q.title) + '</div>' +
+        '<div class="qi-sub">' + kindTag(q) +
+          (q.status === 'closed' ? '<span class="q-kind closed">已结案</span>' : '') +
+          (q.kind === 'main' && q.voteTotal ? '<span>投票 ' + q.voteTotal + '</span>' : '') +
+          (q.place ? '<span>' + FF.esc(q.place) + '</span>' : '') +
+        '</div>' +
+        '<div class="qi-excerpt">' + FF.esc(q.excerpt || '') + '</div>' +
+      '</div>' +
+    '</a></li>'
+  ).join('');
+}
+
+async function load() {
+  const q = kindFilter ? '?kind=' + encodeURIComponent(kindFilter) : '';
+  const data = await FF.api('/api/quests' + q);
+  cache = data.quests || [];
+  renderList();
+}
+
+function openNewQuest() {
+  if (!me || !me.user) { $('status').textContent = '请先登入并创建账号后再发布委托。'; return; }
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 4px;color:#ff5940">发布普通委托</h3>' +
+    '<label class="lab">委托标题<span class="req">*</span><input class="field" id="nq-title" maxlength="80"></label>' +
+    '<label class="lab">委托图片【】（可选）<input type="file" id="nq-file" accept="image/png,image/jpeg,image/webp"></label>' +
+    '<div id="nq-preview" class="thread-images"></div>' +
+    '<label class="lab">委托描述<span class="req">*</span><textarea class="field" id="nq-desc" rows="6" maxlength="4000"></textarea></label>' +
+    '<label class="lab">委托地点<input class="field" id="nq-place" maxlength="120"></label>' +
+    '<label class="lab">委托时间<input class="field" id="nq-when" maxlength="120"></label>' +
+    '<label class="lab">委托要求<input class="field" id="nq-req" maxlength="600"></label>' +
+    '<label class="lab" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="nq-anon"> 匿名发布（不显示你的网名与头像）</label>' +
+    '<div style="margin-top:14px;display:flex;gap:8px"><button class="btn primary" type="button" id="nq-go">发布委托</button></div>' +
+    '<p class="status" id="nq-status"></p>', true);
+
+  let image = '';
+  const files = back.querySelector('#nq-file');
+  files.onchange = async () => {
+    image = '';
+    const f = files.files && files.files[0];
+    if (!f) { back.querySelector('#nq-preview').innerHTML = ''; return; }
+    try {
+      image = await readImage(f);
+      back.querySelector('#nq-preview').innerHTML = '<img src="' + image + '" alt="预览">';
+    } catch (e) { back.querySelector('#nq-status').textContent = e.message; }
+  };
+
+  back.querySelector('#nq-go').onclick = async () => {
+    const st = back.querySelector('#nq-status');
+    const btn = back.querySelector('#nq-go');
+    const title = back.querySelector('#nq-title').value.trim();
+    const desc = back.querySelector('#nq-desc').value.trim();
+    if (!title || !desc) { st.textContent = '请填写委托标题和委托描述。'; return; }
+    btn.disabled = true;
+    try {
+      const out = await FF.api('/api/quests', {
+        body: {
+          kind: 'side', title, desc,
+          place: back.querySelector('#nq-place').value.trim(),
+          when: back.querySelector('#nq-when').value.trim(),
+          requirements: back.querySelector('#nq-req').value.trim(),
+          anon: back.querySelector('#nq-anon').checked,
+          image: image || ''
+        }
+      });
+      back.remove();
+      location.href = 'quest.html?id=' + encodeURIComponent(out.quest.id);
+    } catch (e) { st.textContent = e.message; btn.disabled = false; }
+  };
+}
+
+function bindFilters() {
+  const box = $('q-filters');
+  box.onclick = e => {
+    const b = e.target.closest('button[data-kind]');
+    if (!b) return;
+    [...box.querySelectorAll('button')].forEach(x => x.classList.toggle('on', x === b));
+    kindFilter = b.dataset.kind || '';
+    load().catch(err => { $('status').textContent = err.message; });
+  };
+}
+
+(async () => {
+  me = await FF.session();
+  await FF.renderHeader();
+  bindFilters();
+  $('new-quest').onclick = openNewQuest;
+  await load().catch(err => { $('status').textContent = err.message; });
+  FF.sse({ quest: () => { load().catch(() => {}); } });
+})();
+</script>
+</body>
+</html>

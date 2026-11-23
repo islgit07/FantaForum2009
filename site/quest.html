@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/webp" href="/assets/quest-default.webp">
+<title>委托详情 · 怪啖论坛</title>
+<link rel="stylesheet" href="/assets/forum.css">
+</head>
+<body data-section="quests" data-section-name="调查委托">
+<header id="site-header"></header>
+
+<div class="quest-layout single">
+  <main>
+    <div class="toolbar-strip" style="margin-bottom:14px">
+      <a class="btn" href="quests.html">← 委托列表</a>
+      <span class="spacer"></span>
+      <span class="hint" id="q-status-note"></span>
+    </div>
+
+    <article class="win" id="quest-card" hidden>
+      <div class="win-bar">
+        <span class="bar-title" id="q-bar-title">委托</span>
+        <span class="bar-sub" id="q-bar-sub">COMMISSION</span>
+        <span class="corner" aria-hidden="true">×</span>
+      </div>
+      <div class="win-body">
+        <div class="quest-hero">
+          <img id="q-cover" src="/assets/quest-default.webp" alt="委托预览">
+          <span class="hero-tag" id="q-tag"></span>
+        </div>
+
+        <h2 class="quest-head" id="q-title"></h2>
+        <div class="quest-meta" id="q-meta"></div>
+
+        <dl class="quest-fields">
+          <dt>委托地点</dt><dd id="q-place"></dd>
+          <dt>委托时间</dt><dd id="q-when"></dd>
+          <dt>委托要求</dt><dd id="q-req"></dd>
+        </dl>
+
+        <div class="quest-body" id="q-desc"></div>
+
+        <div class="quest-vote" id="q-vote" hidden>
+          <h3>异轨投票</h3>
+          <p class="vote-hint" id="q-vote-hint">你的选择会对委托结果产生决定性影响。一人一票，可以改票。</p>
+          <div id="q-vote-list"></div>
+        </div>
+
+        <div class="toolbar-strip" style="margin-top:16px" id="q-actions">
+          <a class="btn" href="quests.html" id="q-thread">查看原文</a>
+          <span class="spacer"></span>
+          <button class="btn" type="button" id="q-toggle" hidden>结案</button>
+          <button class="btn danger" type="button" id="q-del" hidden>删除</button>
+        </div>
+        <p class="status" id="status" role="status"></p>
+      </div>
+    </article>
+
+    <p class="hint" id="loading">正在读取委托……</p>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const qid = new URLSearchParams(location.search).get('id') || '';
+let me = null;
+let cur = null;
+
+function kindBadge(kind) {
+  return kind === 'main'
+    ? '<span class="q-kind main">重要委托</span>'
+    : '<span class="q-kind side">普通委托</span>';
+}
+
+function fillField(el, v) {
+  el.textContent = v || '未说明';
+  el.classList.toggle('empty', !v);
+}
+
+function render(q) {
+  cur = q;
+  $('quest-card').hidden = false;
+  $('loading').hidden = true;
+  document.title = q.title + ' · 调查委托 · 怪啖论坛';
+  $('q-bar-title').textContent = q.kind === 'main' ? '重要委托' : '普通委托';
+  $('q-bar-sub').textContent = q.status === 'closed' ? 'CLOSED' : 'OPEN';
+  $('q-cover').src = q.cover || '/assets/quest-default.webp';
+  $('q-cover').alt = q.title;
+  $('q-tag').innerHTML = kindBadge(q.kind) +
+    (q.status === 'closed' ? '<span class="q-kind closed">已结案</span>' : '');
+
+  $('q-title').textContent = q.title;
+
+  const meta = [];
+  if (q.authorId) {
+    meta.push('<a href="profile.html?id=' + FF.esc(q.authorId) + '" ' +
+      (FF.hotelMode(q.authorId) ? 'data-user="' + FF.esc(q.authorId) + '" data-hotel="' + FF.hotelMode(q.authorId) + '"' : '') +
+      '>' + FF.esc(q.author) + '</a>');
+  } else meta.push(FF.esc(q.author || '匿名'));
+  meta.push(FF.fmtTime(q.createdAt));
+  if (q.kind === 'main') meta.push('已投票 ' + (q.voteTotal || 0) + ' 人');
+  $('q-meta').innerHTML = meta.map((x, i) => '<span' + (x.indexOf('<a') === 0 ? '' : '') + '>' + x + '</span>').join('');
+
+  fillField($('q-place'), q.place);
+  fillField($('q-when'), q.when);
+  fillField($('q-req'), q.requirements);
+
+  $('q-desc').innerHTML = FF.renderText(q.desc, []);
+
+  /* 异轨投票：只有重要委托才有 */
+  if (q.kind === 'main' && (q.votes || []).length) {
+    $('q-vote').hidden = false;
+    const total = (q.votes || []).reduce((a, v) => a + v.count, 0) || 0;
+    $('q-vote-hint').textContent = q.status === 'closed'
+      ? '该委托已结案，投票结果已定。'
+      : '你的选择会对委托结果产生决定性影响。一人一票，可以改票。当前 ' + total + ' 票。';
+    $('q-vote-list').innerHTML = q.votes.map(v => {
+      const pct = total ? Math.round(v.count * 100 / total) : 0;
+      return '<button type="button" class="vote-opt' + (v.mine ? ' mine' : '') + '"' +
+        ' data-opt="' + FF.esc(v.id) + '"' + (q.status === 'closed' ? ' disabled' : '') + '>' +
+        '<span class="vote-bar" style="width:' + pct + '%"></span>' +
+        '<span class="vote-row"><span class="vote-lbl">' + FF.esc(v.label) + '</span>' +
+        '<span class="vote-num">' + v.count + ' 票 · ' + pct + '%</span></span>' +
+      '</button>';
+    }).join('');
+  } else {
+    $('q-vote').hidden = true;
+  }
+
+  /* 原文 / 操作 */
+  if (q.threadId) { $('q-thread').href = 'thread.html?id=' + encodeURIComponent(q.threadId); }
+  else { $('q-thread').hidden = true; }
+
+  const canManage = !!q.canManage;
+  $('q-toggle').hidden = !canManage;
+  $('q-del').hidden = !canManage;
+  $('q-toggle').textContent = q.status === 'closed' ? '重新开启' : '结案';
+  $('q-status-note').textContent = q.status === 'closed' ? '该委托已结案' : '';
+}
+
+async function load() {
+  if (!qid) { $('loading').textContent = '缺少委托参数。'; return; }
+  const data = await FF.api('/api/quests/' + encodeURIComponent(qid));
+  render(data.quest);
+}
+
+async function vote(optionId) {
+  if (!me || !me.user) { $('status').textContent = '请先登入后再参与异轨投票。'; return; }
+  try {
+    const out = await FF.api('/api/quests/' + encodeURIComponent(qid) + '/vote', { body: { optionId } });
+    render(out.quest);
+    $('status').textContent = '已记录你的选择。';
+  } catch (e) { $('status').textContent = e.message; }
+}
+
+(async () => {
+  me = await FF.session();
+  await FF.renderHeader();
+  $('q-vote-list').onclick = e => {
+    const b = e.target.closest('.vote-opt');
+    if (!b || b.disabled) return;
+    vote(b.dataset.opt);
+  };
+  $('q-toggle').onclick = async () => {
+    try {
+      const out = await FF.api('/api/quests/' + encodeURIComponent(qid) + '/status', {
+        body: { status: cur.status === 'closed' ? 'open' : 'closed' }
+      });
+      render(out.quest);
+      $('status').textContent = cur.status === 'closed' ? '已结案。' : '已重新开启。';
+    } catch (e) { $('status').textContent = e.message; }
+  };
+  $('q-del').onclick = async () => {
+    if (!confirm('确定删除这条委托？删除后列表中不再显示。')) return;
+    try {
+      await FF.api('/api/quests/' + encodeURIComponent(qid) + '/delete', { body: {} });
+      location.href = 'quests.html';
+    } catch (e) { $('status').textContent = e.message; }
+  };
+  FF.bindProfileClicks(document);
+  await load().catch(err => {
+    $('loading').hidden = true;
+    $('status').textContent = err.message;
+  });
+  FF.sse({ quest: d => { if (!d || !d.questId || d.questId === qid) load().catch(() => {}); } });
+})();
+</script>
+</body>
+</html>

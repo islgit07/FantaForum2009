@@ -26,6 +26,10 @@ module.exports = function installForum(ctx) {
   /* ---------- 数据初始化与迁移 ---------- */
   function ensureShape() {
     if (!Array.isArray(DB.channels)) DB.channels = [];
+    /* 「调查委托」频道已由委托模块接管：入口直接进 quests.html，原帖仍可从委托详情查看原文 */
+    for (const c of DB.channels) {
+      if (c.name === '调查委托' && !c.route) c.route = 'quests.html';
+    }
     if (!Array.isArray(DB.threads)) DB.threads = [];
     if (!Array.isArray(DB.notifications)) DB.notifications = [];
     if (!Array.isArray(DB.guestbook)) DB.guestbook = [];
@@ -113,7 +117,8 @@ module.exports = function installForum(ctx) {
     throw httpError(403, '只有帖主或管理员可以操作。');
   }
   function uId(req) { const u = sessionUser(req); return u && u.id; }
-  function publicChannel(c) { return { id: c.id, name: c.name, desc: c.desc, order: c.order || 0, createdAt: c.createdAt }; }
+  /* route：频道可被独立模块接管（如「调查委托」→ quests.html），前端按此跳转 */
+  function publicChannel(c) { return { id: c.id, name: c.name, desc: c.desc, order: c.order || 0, createdAt: c.createdAt, route: c.route || null }; }
   function heat(t) { return (t.likes || []).length * 2 + (t.replies || []).filter(r => !r.deleted).length; }
   const DELETED_LABEL = '【管理员已删除】';
   /* 实时从档案取「网名」与头像：昵称/头像以用户档案为准，管理员改档案后帖子与评论同步更新。 */

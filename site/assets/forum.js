@@ -112,6 +112,7 @@ const FF = (() => {
     ['home.html', '主页', 'home'],
     ['index.html', '公共聊天室', 'chat'],
     ['archives.html', '怪谈档案', 'archives'],
+    ['quests.html', '调查委托', 'quests'],
     ['search.html', '搜索', 'search'],
     ['messages.html', '消息', 'messages'],
     ['register.html', '创建账号', 'register'],
@@ -658,7 +659,10 @@ const FF = (() => {
   const IMG_TOKEN = '\u0000ffimg';
   function safeImgUrl(raw) {
     const s = String(raw == null ? '' : raw).trim();
-    if (s.length < 12 || s.length > 1200) return null;
+    if (s.length > 1200) return null;
+    /* 站内图片：只认 /files/<分类>/<文件名>.<扩展名>，与 /files 静态目录规则一致 */
+    if (/^\/files\/[a-z-]+\/[a-z0-9-]+\.(png|jpe?g|webp)$/i.test(s)) return s;
+    if (s.length < 12) return null;
     if (!/^https:\/\/[^\s"'<>\\]+$/i.test(s)) return null;                 // 必须 https，挡掉 data:/javascript:
     if (!/\.(png|jpe?g|gif|webp|avif)(\?[^\s"'<>]*)?$/i.test(s)) return null;
     return s;
