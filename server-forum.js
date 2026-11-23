@@ -393,7 +393,7 @@ module.exports = function installForum(ctx) {
     if (isAdmin(req)) return true;               // 后台 admin + admin 角色卡
     return !!(u && u.id === g.authorId);         // 仅作者本人
   }
-  function publicReply(req, r) {
+  function publicGuestbookReply(req, r) {
     const gone = !!r.deleted;
     const u = sessionUser(req);
     /* 回复删除权限与留言一致：管理员 或 回复作者本人（坛主空间规则不适用于回复） */
@@ -417,7 +417,7 @@ module.exports = function installForum(ctx) {
       deleted: gone, deletedBy: g.deletedBy || null,
       auto: !!g.auto,
       /* 回复列表（新增：留言回复），按时间正序显示 */
-      replies: (Array.isArray(g.replies) ? g.replies : []).map(r => publicReply(req, r)),
+      replies: (Array.isArray(g.replies) ? g.replies : []).map(r => publicGuestbookReply(req, r)),
       canDelete: !gone && canDel
     };
   }
@@ -480,7 +480,7 @@ module.exports = function installForum(ctx) {
       excerpt: body.length > 40 ? body.slice(0, 40) + '…' : body,
       profileId: g.ownerId
     });
-    sendJSON(res, 200, { ok: true, reply: publicReply(req, r) });
+    sendJSON(res, 200, { ok: true, reply: publicGuestbookReply(req, r) });
   });
   /* 删除回复（新增）：软删除，权限与留言一致——回复作者本人或管理员 */
   route('POST', /^\/api\/guestbook\/([a-z0-9]+)\/reply-delete$/, async (req, res, m) => {
