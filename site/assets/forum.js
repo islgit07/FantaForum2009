@@ -642,13 +642,50 @@ const FF = (() => {
 
   /* 把纯文本渲染成 HTML：先转义，再把 @网名 换成主页链接、[emoji:id] 换成图片 */
   function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  /* 外链图：只认 https 图片直链；<img> 标签本身不落地，仅取 src 重建，避免 XSS */
+  const IMG_TOKEN = '\u0000ffimg';
+  function safeImgUrl(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (s.length < 12 || s.length > 1200) return null;
+    if (!/^https:\/\/[^\s"'<>\\]+$/i.test(s)) return null;                 // 必须 https，挡掉 data:/javascript:
+    if (!/\.(png|jpe?g|gif|webp|avif)(\?[^\s"'<>]*)?$/i.test(s)) return null;
+    return s;
+  }
+  function splitImages(src) {
+    const imgs = [];
+    const hold = u => { imgs.push(u); return IMG_TOKEN + (imgs.length - 1) + '\u0000'; };
+    let out = String(src).replace(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi, (m, url) => {
+      const u = safeImgUrl(url);
+      return u ? hold(u) : m;                                              // 不合规就原样保留（随后转义成文字）
+    });
+    out = out.replace(/https?:\/\/[^\s<>"']+/gi, (m) => {
+      const cut = m.replace(/[，。！？、；：）】」》]+$/, '');
+      const u = safeImgUrl(cut);
+      if (!u) return m;
+      return hold(u) + m.slice(cut.length);                                 // 保留尾部标点
+    });
+    return { text: out, imgs };
+  }
   function renderText(text, mentions) {
-    const src = String(text == null ? '' : text);
+    const split = splitImages(String(text == null ? '' : text));
+    const imgs = split.imgs;
+    const src = split.text;
     const list = (Array.isArray(mentions) ? mentions : [])
       .filter(m => m && m.id && String(m.name || '').trim())
       .map(m => ({ id: m.id, name: String(m.name).trim(), noProfile: !!m.noProfile }))
       .sort((a, b) => b.name.length - a.name.length);
-    if (!list.length && src.indexOf('[emoji:') < 0) return esc(src);
+    /* 把占位符换回 <img>；没有外链图时保持原样 */
+    const imgBack = html => imgs.length
+      ? html.replace(/\u0000ffimg(\d+)\u0000/g, (m, i) => {
+          const url = imgs[Number(i)];
+          return url
+            ? '<a class="inline-img-link" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' +
+              '<img class="inline-img" src="' + esc(url) + '" alt="外链图片" loading="lazy" decoding="async" referrerpolicy="no-referrer"></a>'
+            : '';
+        })
+      : html;
+    if (!list.length && src.indexOf('[emoji:') < 0) return imgBack(esc(src));
     const parts = [];
     if (list.length) parts.push('@(?:' + list.map(m => escapeRe(m.name)).join('|') + ')');
     parts.push('\\[emoji:(\\d+)\\]');
@@ -672,7 +709,7 @@ const FF = (() => {
       i = m.index + m[0].length;
     }
     out += esc(src.slice(i));
-    return out;
+    return imgBack(out);
   }
 
   /* 记录原文与提及表，表情增删后可以原地重绘（不刷新页面） */
