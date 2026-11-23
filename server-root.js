@@ -185,6 +185,98 @@ module.exports = function installRoot(deps) {
   }
   const topList = obj => Object.entries(obj || {}).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => ({ k, v }));
 
+  /* ---------- 内容运营聚合（新增：内容运营看板，仅 root 可见） ----------
+   * 全部来自内存 DB，不落盘、不经 SSE；口径：
+   *   发帖数 = 未删除的 threads；回复数 = 未删除的 replies；档案数 = approved 的 posts；
+   *   获赞数 = thread/reply 的 likes 累计；活跃用户 = 发帖+回复+档案 的总动作数 Top10。 */
+  function contentOverview(days) {
+    const now = Date.now();
+    const startTs = now - days * 86400000;
+    const dayKeys = [];
+    for (let i = days - 1; i >= 0; i--) dayKeys.push(dayKey(new Date(now - i * 86400000)));
+    const trendMap = {};
+    dayKeys.forEach(k => { trendMap[k] = { threads: 0, replies: 0, posts: 0 }; });
+    const dayOf = ts => { const n = Number(ts); return n > 0 ? dayKey(new Date(n)) : ''; };
+    const todayK = dayKey();
+
+    const channelStats = {};
+    (DB.channels || []).forEach(c => { channelStats[c.id] = { id: c.id, name: c.name, threads: 0, replies: 0, likes: 0, recent: 0 }; });
+    const userStats = {};
+    const touchUser = (id, fallback) => {
+      if (!id) return null;
+      if (!userStats[id]) userStats[id] = { id, name: fallback || '', threads: 0, replies: 0, posts: 0, likes: 0, recent: 0 };
+      const s = userStats[id];
+      if (fallback && !s.name) s.name = fallback;
+      return s;
+    };
+
+    let totalThreads = 0, totalReplies = 0, totalPosts = 0, totalLikes = 0;
+    let todayThreads = 0, todayReplies = 0, todayPosts = 0;
+
+    for (const t of (DB.threads || [])) {
+      if (t.deleted) continue;
+      totalThreads++;
+      const tk = dayOf(t.createdAt);
+      if (trendMap[tk]) trendMap[tk].threads++;
+      if (tk === todayK) todayThreads++;
+      const lk = (t.likes || []).length;
+      totalLikes += lk;
+      const u = touchUser(t.authorId, t.author);
+      if (u) { u.threads++; u.likes += lk; }
+      const ch = channelStats[t.channelId];
+      const recent = Number(t.createdAt) >= startTs;
+      if (ch) { ch.threads++; ch.likes += lk; if (recent) ch.recent++; }
+      if (u && recent) u.recent++;
+      for (const r of (t.replies || [])) {
+        if (r.deleted) continue;
+        totalReplies++;
+        const rk = dayOf(r.createdAt);
+        if (trendMap[rk]) trendMap[rk].replies++;
+        if (rk === todayK) todayReplies++;
+        const rl = (r.likes || []).length;
+        totalLikes += rl;
+        const ru = touchUser(r.authorId, r.author);
+        if (ru) { ru.replies++; ru.likes += rl; }
+        if (ch) ch.replies++;
+        if (Number(r.createdAt) >= startTs) {
+          if (ch) ch.recent++;
+          if (ru) ru.recent++;
+        }
+      }
+    }
+    for (const p of (DB.posts || [])) {
+      if (p.status !== 'approved') continue;
+      totalPosts++;
+      const pk = dayOf(p.createdAt);
+      if (trendMap[pk]) trendMap[pk].posts++;
+      if (pk === todayK) todayPosts++;
+      const pu = touchUser(p.submitterId || p.authorId, p.author);
+      if (pu) pu.posts++;
+    }
+    /* 网名以用户库为准（改名后看板也显示当前网名） */
+    for (const u of (DB.users || [])) {
+      if (userStats[u.id]) userStats[u.id].name = u.nickname || userStats[u.id].name;
+    }
+
+    const trend = dayKeys.map(k => ({ day: k, threads: trendMap[k].threads, replies: trendMap[k].replies, posts: trendMap[k].posts }));
+    const channels = Object.keys(channelStats).map(id => channelStats[id])
+      .sort((a, b) => (b.threads + b.replies) - (a.threads + a.replies));
+    const active = Object.keys(userStats).map(id => {
+      const s = userStats[id];
+      return { id: s.id, name: s.name || '（无名）', threads: s.threads, replies: s.replies, posts: s.posts, likes: s.likes, actions: s.threads + s.replies + s.posts, recent: s.recent };
+    }).sort((a, b) => b.actions - a.actions || b.recent - a.recent).slice(0, 10);
+
+    return {
+      days, updated: now,
+      overview: {
+        threads: totalThreads, replies: totalReplies, posts: totalPosts, likes: totalLikes,
+        users: (DB.users || []).filter(u => u.status === 'approved').length,
+        today: { threads: todayThreads, replies: todayReplies, posts: todayPosts }
+      },
+      trend, channels, active
+    };
+  }
+
   /* ---------- 认证 ---------- */
   function ensureRootAuth() {
     if (DB.config.rootPassHash) return;
@@ -417,6 +509,14 @@ module.exports = function installRoot(deps) {
       topGeo: topList(rec.geo),
       log: { total, pages, page, size, list: list.slice(start, end).reverse() }
     });
+  });
+
+  /* 内容运营看板（新增）：仅 root 会话可读；天数限 7/14/30，默认 14 */
+  route('GET', /^\/api\/root\/content$/, async (req, res, m, url) => {
+    needRoot(req);
+    const n = parseInt(url.searchParams.get('days'), 10);
+    const days = [7, 14, 30].indexOf(n) >= 0 ? n : 14;
+    sendJSON(res, 200, contentOverview(days));
   });
 
   return { init, recordVisit };

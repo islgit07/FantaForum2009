@@ -20,7 +20,7 @@ module.exports = function installForum(ctx) {
     DB, save, route, broadcast, saveImage, addMessage,
     sessionUser, isAdmin, isAdminRole, isNoProfileUser, needAdmin,
     httpError, sendJSON, readJSON, text, requireText, uid,
-    FILES, path, fs, fsp, getVisits
+    FILES, path, fs, fsp, getVisits, unlockAchievement
   } = ctx;
 
   /* ---------- 数据初始化与迁移 ---------- */
@@ -137,12 +137,13 @@ module.exports = function installForum(ctx) {
       id: t.id, channelId: t.channelId,
       title: tomb ? DELETED_LABEL : (cleared ? '【已清除】' : t.title),
       body: tomb ? DELETED_LABEL : (cleared ? '【已清除】' : t.body),
+      mentions: tomb || cleared ? [] : (t.mentions || []),
       images: tomb || cleared ? [] : (t.images || []),
       author: ident.author, authorId: t.authorId, authorMuted: !!ident.muted,
       anon: !tomb && !!t.anon, authorNoProfile: !!ident.noProfile,
       authorBanned: cleared,
       avatar: cleared ? BANNED_AVATAR : ident.avatar,
-      createdAt: t.createdAt, updatedAt: t.updatedAt,
+      createdAt: t.createdAt, updatedAt: t.updatedAt, editedAt: t.editedAt || null,
       likes: tomb ? 0 : (t.likes || []).length, likedByMe: false,
       replies: tomb ? [] : (t.replies || []).slice().sort((a, b) =>
         (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || a.floor - b.floor
@@ -169,6 +170,7 @@ module.exports = function installForum(ctx) {
       authorBanned: cleared,
       floor: r.floor,
       body: cleared ? '【已清除】' : (gone ? ('【' + ((r.deletedBy && r.deletedBy.name) || '某人') + '已删除评论】') : r.body),
+      mentions: gone || cleared ? [] : (r.mentions || []),
       createdAt: r.createdAt,
       likes: gone ? 0 : (r.likes || []).length, likedByMe: false,
       pinned: gone ? false : !!r.pinned, pinnedBy: gone ? null : (r.pinnedBy || null),
@@ -202,6 +204,44 @@ module.exports = function installForum(ctx) {
     if (DB.notifications.length > 1000) DB.notifications.splice(0, DB.notifications.length - 1000);
     broadcast('notification', n);
   }
+  /* ---------- @ 提及 ---------- */
+  /* 按当前已过审账号的「网名」匹配 @；名字越长越优先，避免 @小A 抢先吃掉 @小AB。
+     返回的 name 是匹配到的网名，noProfile 用于前端决定是否给主页链接。 */
+  function mentionMeta(text) {
+    const body = String(text == null ? '' : text);
+    if (!body || body.indexOf('@') < 0) return [];
+    const pool = (DB.users || [])
+      .filter(u => u && u.status === 'approved' && !u.banned && String(u.nickname || '').trim())
+      .map(u => ({ u, name: String(u.nickname).trim() }))
+      .sort((a, b) => b.name.length - a.name.length);
+    const seen = new Set(), out = [];
+    let pos = -1;
+    while ((pos = body.indexOf('@', pos + 1)) >= 0) {
+      /* 不把邮箱等 foo@bar 当成提及 */
+      if (pos > 0 && /[A-Za-z0-9._%+-]/.test(body.charAt(pos - 1))) continue;
+      const rest = body.slice(pos + 1);
+      const hit = pool.find(x => rest.startsWith(x.name));
+      if (!hit) continue;
+      if (!seen.has(hit.u.id)) {
+        seen.add(hit.u.id);
+        out.push({ id: hit.u.id, name: hit.name, noProfile: isNoProfileUser(hit.u) });
+      }
+      pos += hit.name.length;
+    }
+    return out;
+  }
+  function notifyChatMentions(msg, actor) {
+    const list = ((msg && msg.mentions) || []).filter(m => m && m.id && m.id !== actor.id);
+    if (!list.length) return 0;
+    for (const m of list) {
+      notify(m.id, 'chatMention', actor, {
+        chat: true,
+        excerpt: String(msg.text || '').slice(0, 80)
+      });
+    }
+    save();
+    return list.length;
+  }
   function imagesOf(b) {
     const out = [];
     for (const key of ['image', 'image2', 'image3']) {
@@ -216,15 +256,17 @@ module.exports = function installForum(ctx) {
     const channels = DB.channels.slice().sort((a, b) => (a.order || 0) - (b.order || 0)).map(c => {
       const items = list.filter(t => t.channelId === c.id);
       const hot = items.slice().sort((a, b) => heat(b) - heat(a) || b.createdAt - a.createdAt)[0] || null;
+      const latest = items.slice().sort((a, b) => b.createdAt - a.createdAt)[0] || null;
       return {
         ...publicChannel(c), count: items.length,
-        hotThread: hot ? { id: hot.id, title: hot.title, heat: heat(hot) } : null
+        hotThread: hot ? { id: hot.id, title: hot.title, heat: heat(hot) } : null,
+        latestThread: latest ? { id: latest.id, title: latest.title } : null
       };
     });
-    /* 主页只让最热门的前三个频道带 HOT；无热帖的频道不占名额。频道本身顺序不变。 */
+    /* 主页只让全站最 HOT 的一个频道带 HOT；其余频道由前端显示 NEW 本频道最新帖。频道本身顺序不变。 */
     const hotIds = new Set(channels.filter(c => c.hotThread)
       .sort((a, b) => b.hotThread.heat - a.hotThread.heat || b.count - a.count || (a.order || 0) - (b.order || 0))
-      .slice(0, 3).map(c => c.id));
+      .slice(0, 1).map(c => c.id));
     for (const c of channels) if (!hotIds.has(c.id)) c.hotThread = null;
     const ranking = list.slice().sort((a, b) =>
       (b.likes || []).length - (a.likes || []).length || b.createdAt - a.createdAt
@@ -351,6 +393,19 @@ module.exports = function installForum(ctx) {
     if (isAdmin(req)) return true;               // 后台 admin + admin 角色卡
     return !!(u && u.id === g.authorId);         // 仅作者本人
   }
+  function publicReply(req, r) {
+    const gone = !!r.deleted;
+    const u = sessionUser(req);
+    /* 回复删除权限与留言一致：管理员 或 回复作者本人（坛主空间规则不适用于回复） */
+    const canDel = isAdmin(req) || !!(u && u.id === r.authorId);
+    return {
+      id: r.id, authorId: r.authorId,
+      author: resolveIdentity(r.authorId, r.author, r.avatar).author, avatar: gone ? null : (r.avatar || null),
+      body: gone ? ('【' + ((r.deletedBy && r.deletedBy.name) || '某人') + '已删除回复】') : r.body,
+      createdAt: r.createdAt, deleted: gone, deletedBy: r.deletedBy || null,
+      canDelete: !gone && canDel
+    };
+  }
   function publicGuestbook(req, g) {
     const gone = !!g.deleted;
     const canDel = guestbookCanDelete(req, g);
@@ -361,6 +416,8 @@ module.exports = function installForum(ctx) {
       createdAt: g.createdAt,
       deleted: gone, deletedBy: g.deletedBy || null,
       auto: !!g.auto,
+      /* 回复列表（新增：留言回复），按时间正序显示 */
+      replies: (Array.isArray(g.replies) ? g.replies : []).map(r => publicReply(req, r)),
       canDelete: !gone && canDel
     };
   }
@@ -396,7 +453,51 @@ module.exports = function installForum(ctx) {
     });
     sendJSON(res, 200, { ok: true, guestbook: publicGuestbook(req, g) });
   });
-  /* 坛主主页彩蛋：登入访客自动留言（每人一次，不可删除，坛主本人除外） */
+  /* 回复留言（新增：留言回复）
+   * 规则：任何已登录角色可回复未删除的留言（坛主空间的系统自动评论也可回复）；
+   * 单条留言最多 50 条回复；回复对象收到「XXX 回复了你的留言」通知（回复自己不通知）。 */
+  route('POST', /^\/api\/guestbook\/([a-z0-9]+)\/reply$/, async (req, res, m) => {
+    const a = actorOf(req);
+    const g = DB.guestbook.find(x => x.id === m[1]);
+    if (!g) throw httpError(404, '未找到该留言。');
+    if (g.deleted) throw httpError(400, '该留言已删除，无法回复。');
+    const b = await readJSON(req);
+    const body = text(b.body, 500, '回复');
+    if (!body) throw httpError(400, '回复内容不能为空。');
+    if (!Array.isArray(g.replies)) g.replies = [];
+    if (g.replies.length >= 50) throw httpError(400, '这条留言的回复已达上限（50 条）。');
+    const r = {
+      id: uid(), authorId: a.id, author: a.name, avatar: a.avatar || null,
+      body, createdAt: Date.now(), deleted: false, deletedBy: null
+    };
+    g.replies.push(r);
+    save();
+    broadcast('guestbook', publicGuestbook(req, g));
+    /* 通知被回复人（留言作者）；回复人与作者是同一人时不通知（notify 内部处理） */
+    const replyOwner = DB.users.find(u => u.id === g.ownerId);
+    notify(g.authorId, 'guestbookReply', a, {
+      ownerName: replyOwner ? replyOwner.nickname : '',
+      excerpt: body.length > 40 ? body.slice(0, 40) + '…' : body,
+      profileId: g.ownerId
+    });
+    sendJSON(res, 200, { ok: true, reply: publicReply(req, r) });
+  });
+  /* 删除回复（新增）：软删除，权限与留言一致——回复作者本人或管理员 */
+  route('POST', /^\/api\/guestbook\/([a-z0-9]+)\/reply-delete$/, async (req, res, m) => {
+    const a = actorOf(req);
+    const g = DB.guestbook.find(x => x.id === m[1]);
+    if (!g) throw httpError(404, '未找到该留言。');
+    const b = await readJSON(req);
+    const r = (g.replies || []).find(x => x.id === b.replyId);
+    if (!r) throw httpError(404, '未找到该回复。');
+    if (r.deleted) throw httpError(400, '该回复已删除。');
+    if (!(isAdmin(req) || (a && a.id === r.authorId))) throw httpError(403, '只有回复者本人或管理员可以删除该回复。');
+    r.deleted = true;
+    r.deletedBy = { role: a.role === 'admin' ? 'admin' : 'self', name: a.name, id: a.id };
+    save();
+    broadcast('guestbook', publicGuestbook(req, g));
+    sendJSON(res, 200, { ok: true });
+  });
   route('POST', /^\/api\/guestbook\/([a-z0-9]+)\/auto$/, async (req, res, m) => {
     const a = actorOf(req);
     if (a.role === 'admin') throw httpError(403, '管理后台会话不需要自动留言。');
@@ -485,6 +586,7 @@ module.exports = function installForum(ctx) {
     const b = await readJSON(req);
     const title = requireText(b.title, 120, '标题');
     const body = requireText(b.body, 5000, '正文');
+    const mentions = mentionMeta(body);
     const anon = !!b.anon;
     const id = uid();
     const images = [];
@@ -495,7 +597,7 @@ module.exports = function installForum(ctx) {
       if (url) images.push(url);
     }
     const t = {
-      id, channelId: c.id, title, body, images,
+      id, channelId: c.id, title, body, images, mentions,
       /* 匿名发布：显示层固定为「匿名」、头像留空；保留真实 authorId，帖主仍可删改/通知正常 */
       authorId: a.id, author: anon ? '匿名' : a.name, avatar: anon ? null : (a.avatar || null),
       anon,
@@ -505,6 +607,35 @@ module.exports = function installForum(ctx) {
     };
     DB.threads.push(t);
     save();
+    /* 发帖正文 @ 到的人 → 站内消息；匿名发帖不暴露真实网名 */
+    if (mentions.length) {
+      const noticeActor = anon ? { id: a.id, name: '匿名', role: 'user' } : a;
+      for (const m of mentions) {
+        if (m.id === a.id) continue;
+        notify(m.id, 'threadMention', noticeActor, {
+          threadId: t.id, threadTitle: t.title, excerpt: body.slice(0, 80)
+        });
+      }
+      save();
+    }
+    /* 关注的人发帖 → 给所有关注者推送站内消息（新增：关注功能）
+       匿名发帖沿用匿名身份，不向关注者暴露真实网名；关注者仍能从「你关注的人」文案知道来源。 */
+    let followNotified = 0;
+    for (const u of DB.users || []) {
+      if (u.status !== 'approved' || !(u.following || []).includes(a.id)) continue;
+      notify(u.id, 'followPost', anon ? { id: a.id, name: '匿名', role: 'user' } : a, {
+        threadId: t.id, threadTitle: t.title, excerpt: body.slice(0, 80), follow: true
+      });
+      followNotified++;
+    }
+    if (followNotified) save();
+    /* 成就：社区贡献值 = 发布 5 条帖子（按当前有效帖数判定） */
+    if (a.role === 'user') {
+      const poster = (DB.users || []).find(x => x.id === a.id);
+      if (poster && (DB.threads || []).filter(x => !x.deleted && x.authorId === a.id).length >= 5) {
+        unlockAchievement(poster, 'contributor');
+      }
+    }
     broadcast('thread', publicThread(t));
     sendJSON(res, 200, { ok: true, thread: withLikedMe(t, req) });
   });
@@ -518,6 +649,7 @@ module.exports = function installForum(ctx) {
     if (t.locked) throw httpError(403, '此帖已被封锁，禁止回复。');
     const b = await readJSON(req);
     const body = requireText(b.body, 2000, '回复');
+    const mentions = mentionMeta(body);
     t.replies = t.replies || [];
     // 回复某条评论：新建一楼，正文前加 @网名(楼层)：前缀
     let replyTo = null;
@@ -530,23 +662,34 @@ module.exports = function installForum(ctx) {
     }
     const r = {
       id: uid(), authorId: a.id, author: a.name, avatar: a.avatar || null,
-      floor: t.replies.length + 1, body, createdAt: Date.now(),
+      floor: t.replies.length + 1, body, mentions, createdAt: Date.now(),
       likes: [], pinned: false, pinnedBy: null, replyTo,
       deleted: false, deletedBy: null
     };
     t.replies.push(r);
     t.updatedAt = Date.now();
     save();
-    // 新评论 → 通知帖主
-    notify(t.authorId, 'reply', a, { threadId: t.id, threadTitle: t.title, excerpt: body.slice(0, 80), floor: r.floor });
-    // 回复某条评论 → 额外通知被回复者
+    /* 同一个人只收一条本次回复的消息：帖主回复 > 被回复者 > 正文 @ 提及 */
+    const noticed = new Set([a.id]);
+    const notifyOnce = (targetId, type, payload) => {
+      if (!targetId || noticed.has(targetId)) return;
+      noticed.add(targetId);
+      notify(targetId, type, a, payload);
+    };
+    notifyOnce(t.authorId, 'reply', { threadId: t.id, threadTitle: t.title, excerpt: body.slice(0, 80), floor: r.floor });
     if (replyTo && replyTo.authorId) {
-      notify(replyTo.authorId, 'mention', a, {
+      notifyOnce(replyTo.authorId, 'mention', {
         threadId: t.id, threadTitle: t.title,
         excerpt: body.slice(0, 80), floor: r.floor,
         mentionOf: { author: replyTo.author, floor: replyTo.floor }
       });
     }
+    for (const m of mentions) {
+      notifyOnce(m.id, 'replyMention', {
+        threadId: t.id, threadTitle: t.title, excerpt: body.slice(0, 80), floor: r.floor
+      });
+    }
+    save();
     broadcast('reply', { threadId: t.id, reply: publicReply(r) });
     sendJSON(res, 200, { ok: true, reply: publicReply(r) });
   });
@@ -622,6 +765,50 @@ module.exports = function installForum(ctx) {
     save();
     broadcast('thread', publicThread(t));
     sendJSON(res, 200, { ok: true, locked: t.locked, thread: publicThread(t) });
+  });
+
+  /* 帖主在帖子页编辑自己的帖子/怪谈（新增：发帖人编辑）
+   * 仅帖主本人可改：标题、正文、配图（最多 3 张）、匿名状态。
+   * 频道 / 发帖人 / 置顶 / 封锁一律不动（管理员改这些仍走后台接口）。
+   * 编辑留痕：写 editedAt，前端在时间旁显示「已编辑」。 */
+  route('POST', /^\/api\/threads\/([a-z0-9]+)\/edit$/, async (req, res, m) => {
+    const t = thread(m[1]);
+    if (!t || t.deleted) throw httpError(404, '未找到该帖子。');
+    const a = actorOf(req);
+    muteGuard(req);
+    if (a.role !== 'user' || a.id !== t.authorId) throw httpError(403, '只有发帖人本人可以编辑。');
+    const b = await readJSON(req);
+    t.title = requireText(b.title, 120, '标题');
+    t.body = requireText(b.body, 5000, '正文');
+    t.mentions = mentionMeta(t.body);
+
+    /* 配图：前端回传的 image/image2/image3 可能是已有 /files 链接（保留原样）
+     * 或新上传的 data URL（落盘新文件）；未再引用的旧图顺手清理。 */
+    const was = (t.images || []).slice();
+    const wanted = [b.image, b.image2, b.image3].filter(x => !!x).slice(0, 3);
+    const next = [];
+    for (let i = 0; i < wanted.length; i++) {
+      const val = String(wanted[i]);
+      if (val.indexOf('data:') === 0) {
+        const url = await saveImage(val, 'thread-images', t.id + '-' + (i + 1));
+        if (url) next.push(url);
+      } else if (/^\/files\/thread-images\/[a-z0-9-]+\.(png|jpg|webp)(\?v=\d+)?$/.test(val)) {
+        next.push(val);
+      }
+    }
+    t.images = next;
+    for (const u of was) {
+      if (next.indexOf(u) === -1 && /^\/files\/thread-images\/[a-z0-9-]+\.(png|jpg|webp)(\?v=\d+)?$/.test(u)) {
+        try { await fsp.unlink(path.join(FILES, 'thread-images', u.split('?')[0].split('/').pop())); } catch {}
+      }
+    }
+
+    t.anon = !!b.anon;
+    t.editedAt = Date.now();
+    t.updatedAt = Date.now();
+    save();
+    broadcast('thread', publicThread(t));
+    sendJSON(res, 200, { ok: true, thread: publicThread(t) });
   });
 
   // 帖主/管理员在帖子页删除：一律带痕（墓碑占位）
@@ -702,6 +889,7 @@ module.exports = function installForum(ctx) {
     const b = await readJSON(req);
     t.title = requireText(b.title, 120, '标题');
     t.body = requireText(b.body, 5000, '正文');
+    t.mentions = mentionMeta(t.body);
     if (channel(b.channelId)) t.channelId = b.channelId;
     // 管理员可改发帖人：选一个已注册账号（按 id）或填自定义网名（author）
     if (b.authorMode === 'user') {
@@ -751,5 +939,5 @@ module.exports = function installForum(ctx) {
     sendJSON(res, 200, { ok: true, mode });
   });
 
-  return { migrate, ensureShape };
+  return { migrate, ensureShape, mentionMeta, notifyChatMentions, notify };
 };

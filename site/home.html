@@ -41,6 +41,11 @@ button.egg-pressed { transform: translateY(2px) scale(.97); filter: brightness(.
       </div>
     </section>
 
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">论坛小工具</span><span class="bar-sub">FORUM TOOLS</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><div class="chan-grid" id="forum-tools"></div></div>
+    </section>
+
     <div class="home-grid">
       <section class="win" id="channels">
         <div class="win-bar"><span class="bar-title">频道导航</span><span class="bar-sub">CHANNELS</span><span class="corner" aria-hidden="true">×</span></div>
@@ -54,13 +59,14 @@ button.egg-pressed { transform: translateY(2px) scale(.97); filter: brightness(.
   </main>
 </div>
 
-<footer class="site-foot">本日活跃人数：<span id="today-visits">—</span>人</footer>
+<footer class="site-foot">本日活跃人数：<span id="today-visits">—</span>人　｜　致谢@苏英璃@Maru@苏南</footer>
 
 <script src="/assets/forum.js"></script>
 <script>
 'use strict';
 const announce = document.getElementById('announce');
 const channelBox = document.getElementById('channels');
+const toolBox = document.getElementById('forum-tools');
 const rankBox = document.getElementById('ranking');
 const visitBox = document.getElementById('today-visits');
 
@@ -85,8 +91,17 @@ function renderHome(d) {
       '<h3>' + FF.esc(c.name) + '</h3>' +
       '<div class="desc">' + FF.esc(c.desc || '') + '</div>' +
       '<div class="meta"><span>' + c.count + ' 篇帖子</span>' +
-      (c.hotThread ? '<span class="hot">HOT↑ ' + FF.esc(c.hotThread.title) + '</span>' : '') + '</div>' +
+      (c.hotThread
+        ? '<span class="hot">HOT↑ ' + FF.esc(c.hotThread.title) + '</span>'
+        : c.latestThread
+          ? '<span class="new">NEW ' + FF.esc(c.latestThread.title) + '</span>'
+          : '') + '</div>' +
     '</a>').join('') : '<p class="hint">暂无频道。</p>';
+  toolBox.innerHTML = '<a class="chan-card" href="identity.html">' +
+    '<h3>异常对策课</h3>' +
+    '<div class="desc">ANOMALY REACTION AGENCY / 身份证明制作</div>' +
+    '<div class="meta"><span>证件生成</span><span>TOOL / 01</span></div>' +
+    '</a>';
   rankBox.innerHTML = d.ranking.length ? d.ranking.map(r =>
     '<li><a href="thread.html?id=' + FF.esc(r.id) + '">' + FF.esc(r.title) +
       (r.isNew ? '<span class="tag-new">new</span>' : '') + '</a>' +
@@ -111,6 +126,10 @@ function cdTick() {
   if (!cdBroken && d !== cdDay) {
     cdBroken = true;
     cdBrokenSec = 44;
+    /* 成就：跨夜失败 = 触发首页过 00:00 彩蛋（需登入，失败静默） */
+    FF.api('/api/achievements/unlock', { body: { id: 'night_fail' } })
+      .then(r => { if (r && r.unlocked && r.achievement) FF.notifyAchievement(r.achievement); })
+      .catch(() => {});
     setTimeout(cdEggModal, 3000);
   }
   cdDay = d;
@@ -146,7 +165,9 @@ function cdEggModal() {
     }, 4000);
   };
 }
-window.ffMidnightEgg = () => { if (!cdBroken) { cdBroken = true; cdBrokenSec = 44; setTimeout(cdEggModal, 3000); } }; /* 验证钩子 */
+window.ffMidnightEgg = () => { if (!cdBroken) { cdBroken = true; cdBrokenSec = 44; FF.api('/api/achievements/unlock', { body: { id: 'night_fail' } })
+      .then(r => { if (r && r.unlocked && r.achievement) FF.notifyAchievement(r.achievement); })
+      .catch(() => {}); setTimeout(cdEggModal, 3000); } }; /* 验证钩子 */
 cdTick();
 setInterval(cdTick, 1000);
 </script>

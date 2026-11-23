@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/webp" href="/assets/openeye.webp">
+<title>怪啖论坛 · 聊天存档</title>
+<link rel="stylesheet" href="/assets/forum.css">
+<body data-section="chat" data-section-name="聊天存档">
+<header id="site-header"></header>
+
+<div class="layout">
+  <main>
+    <section class="win">
+      <div class="win-bar">
+        <span class="bar-title">聊天存档</span>
+        <span class="bar-sub">CHAT / ARCHIVE</span>
+        <span class="corner" aria-hidden="true">×</span>
+      </div>
+
+      <!-- 存档列表 -->
+      <div class="arch-body" id="arch-list"></div>
+
+      <!-- 存档查看 -->
+      <div id="arch-view" hidden>
+        <div class="arch-toolbar">
+          <button class="btn" type="button" id="arch-back">← 返回存档列表</button>
+          <span class="arch-title" id="arch-title"></span>
+          <span class="hint" id="arch-range"></span>
+        </div>
+
+        <!-- 爬楼辅助工具条：搜索 / 只看某人 -->
+        <div class="arch-toolbar arch-filter" id="arch-filter" hidden>
+          <input class="field arch-search" id="arch-search" type="search" placeholder="搜内容 / 网名" autocomplete="off">
+          <select class="field arch-who" id="arch-who"><option value="">全部发言人</option></select>
+        </div>
+        <!-- 新增：日期锚点，点一下跳到那天 -->
+        <div class="arch-days" id="arch-days" hidden></div>
+
+        <div class="arch-scroll">
+          <div class="arch-pager">
+            <button class="btn" type="button" id="arch-earlier" hidden>↑ 加载更早的消息</button>
+            <span class="hint" id="arch-top-hint" hidden>已经到这一卷的开头了。</span>
+          </div>
+          <div class="chat-log scan arch-flat arch-log" id="arch-log"></div>
+          <div class="arch-pager"><span class="hint" id="arch-bottom-hint"></span></div>
+          <!-- 新增：长列表内悬浮跳转 -->
+          <div class="arch-float">
+            <button class="btn" type="button" id="arch-to-start">↑ 开头</button>
+            <button class="btn" type="button" id="arch-to-latest">↓ 最新</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/assets/forum.js"></script>
+<script>
+'use strict';
+const listEl = document.getElementById('arch-list');
+const viewEl = document.getElementById('arch-view');
+const log = document.getElementById('arch-log');
+const scrollEl = document.querySelector('.arch-scroll');
+/* 新增：爬楼辅助元素 */
+const filterEl = document.getElementById('arch-filter');
+const searchEl = document.getElementById('arch-search');
+const whoEl = document.getElementById('arch-who');
+const daysEl = document.getElementById('arch-days');
+
+let cur = null;        /* 当前查看的存档 */
+let firstLoadedId = 0; /* 已加载的最小消息 id */
+let hasMore = false;
+let fullLoaded = false; /* 新增：是否已把整卷加载完 */
+let loadingPromise = null; /* 正在进行的整卷加载，避免并发重复追加 */
+
+/* 新增：按本地时间算日期，用作锚点与分隔 */
+function dayKey(ts) {
+  const d = new Date(Number(ts));
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function dayLabel(key) {
+  const p = String(key).split('-');
+  return p[0] + '年' + Number(p[1]) + '月' + Number(p[2]) + '日';
+}
+
+async function showList() {
+  viewEl.hidden = true;
+  filterEl.hidden = true;
+  daysEl.hidden = true;
+  listEl.hidden = false;
+  let list = [];
+  try { list = await FF.api('/api/chat/archives'); } catch (e) { list = []; }
+  listEl.innerHTML = list.length
+    ? '<ul class="mini-list">' + list.map(a =>
+        '<li class="arch-item">' +
+          '<div class="arch-item-main">' +
+            '<div class="arch-item-title">' + FF.esc(a.title) + '</div>' +
+            '<div class="hint">' + FF.fmtTime(a.firstTs) + ' ~ ' + FF.fmtTime(a.lastTs) + ' · 共 ' + a.count + ' 条</div>' +
+          '</div>' +
+          '<button class="btn" type="button" data-open="' + a.id + '">查看</button>' +
+        '</li>').join('') + '</ul>'
+    : '<p class="hint" style="padding:14px">还没有任何存档。</p>';
+  listEl.querySelectorAll('[data-open]').forEach(btn => {
+    btn.onclick = () => {
+      const a = list.find(x => x.id === Number(btn.dataset.open));
+      if (a) openArchive(a);
+    };
+  });
+}
+
+async function openArchive(a) {
+  cur = a;
+  firstLoadedId = 0;
+  hasMore = false;
+  fullLoaded = false;
+  listEl.hidden = true;
+  viewEl.hidden = false;
+  filterEl.hidden = false;
+  searchEl.value = '';
+  whoEl.innerHTML = '<option value="">全部发言人</option>';
+  document.getElementById('arch-title').textContent = a.title;
+  document.getElementById('arch-range').textContent = '#' + a.firstId + ' ~ #' + a.lastId;
+  log.innerHTML = '';
+  document.getElementById('arch-top-hint').hidden = true;
+  document.getElementById('arch-earlier').hidden = true;
+  await loadPage(0);
+  scrollEl.scrollTop = scrollEl.scrollHeight;
+  /* 后台补全整卷，让搜索/日期/发言人从一开始就能覆盖全卷 */
+  ensureAllLoaded().catch(() => {});
+}
+
+/* 把整卷剩余消息补齐（最多 30 页） */
+async function ensureAllLoaded() {
+  if (fullLoaded) return;
+  if (loadingPromise) return loadingPromise;
+  loadingPromise = (async () => {
+    for (let i = 0; i < 30 && hasMore; i++) await loadPage(firstLoadedId);
+    fullLoaded = !hasMore;
+  })();
+  try { await loadingPromise; } finally { loadingPromise = null; }
+}
+
+/* 新增：消息行带原始对象、日期与 #定位按钮 */
+function makeRow(m) {
+  const r = FF.msgRow(m);
+  r._ffMsg = m;
+  r.dataset.day = dayKey(m.ts);
+  const link = document.createElement('button');
+  link.type = 'button';
+  link.className = 'msg-link';
+  link.textContent = '#';
+  link.title = '复制这条消息的定位链接';
+  link.onclick = e => {
+    e.stopPropagation();
+    const url = location.href.split('#')[0] + '#m' + m.id;
+    try {
+      navigator.clipboard.writeText(url);
+      link.textContent = '✓';
+      setTimeout(() => { link.textContent = '#'; }, 1200);
+    } catch (_) {
+      prompt('复制这条消息的定位链接：', url);
+    }
+  };
+  r.appendChild(link);
+  return r;
+}
+
+async function loadPage(before) {
+  const d = await FF.api('/api/chat/archives/' + cur.id + '/messages' + (before ? ('?before=' + before) : ''));
+  hasMore = !!d.hasMore;
+  const rows = d.messages.map(makeRow);
+  const btn = document.getElementById('arch-earlier');
+  const topHint = document.getElementById('arch-top-hint');
+  const bottomHint = document.getElementById('arch-bottom-hint');
+  if (before) {
+    /* 向上追加：保持视口位置不跳 */
+    const beforeH = scrollEl.scrollHeight;
+    const insertBefore = log.firstChild;
+    rows.forEach(r => log.insertBefore(r, insertBefore));
+    scrollEl.scrollTop += scrollEl.scrollHeight - beforeH;
+  } else {
+    rows.forEach(r => log.appendChild(r));
+  }
+  if (d.messages.length) firstLoadedId = Math.min(firstLoadedId || d.messages[0].id, d.messages[0].id);
+  btn.hidden = !hasMore;
+  topHint.hidden = hasMore;
+  bottomHint.textContent = '已显示本卷最新 ' + log.querySelectorAll('.msg').length + ' 条 / 共 ' + cur.count + ' 条';
+  refreshExtras();
+}
+
+/* 新增：重算日期分隔、日期锚点与发言人下拉，然后套用过滤 */
+function refreshExtras() {
+  const rows = Array.prototype.slice.call(log.querySelectorAll('.msg[data-id]'));
+  let prev = '';
+  rows.forEach(r => {
+    const day = r.dataset.day || '';
+    if (day !== prev) {
+      r.classList.add('day-first');
+      r.dataset.dayLabel = dayLabel(day);
+      prev = day;
+    } else {
+      r.classList.remove('day-first');
+      delete r.dataset.dayLabel;
+    }
+  });
+  const days = [];
+  rows.forEach(r => { const d = r.dataset.day; if (d && days.indexOf(d) < 0) days.push(d); });
+  daysEl.innerHTML = days.map(d =>
+    '<button class="arch-day" type="button" data-day="' + d + '">' + d.slice(5).replace(/^0/, '') + '</button>'
+  ).join('');
+  daysEl.querySelectorAll('[data-day]').forEach(b => {
+    b.onclick = () => {
+      const t = log.querySelector('.msg[data-day="' + b.dataset.day + '"]');
+      if (t) t.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
+  });
+  daysEl.hidden = !days.length;
+  /* 发言人取自已加载消息，不额外请求 */
+  const old = whoEl.value;
+  const seen = new Set(), people = [];
+  rows.forEach(r => {
+    const m = r._ffMsg;
+    if (!m || m.kind === 'system') return;
+    const n = String(m.nickname || '').trim();
+    if (n && !seen.has(n)) { seen.add(n); people.push(n); }
+  });
+  people.sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  /* 下拉正在展开时不重建，避免把用户点开的列表关掉 */
+  if (document.activeElement !== whoEl) {
+    whoEl.innerHTML = '<option value="">全部发言人</option>' + people.map(n =>
+      '<option value="' + FF.esc(n) + '">' + FF.esc(n) + '</option>').join('');
+    if (Array.prototype.some.call(whoEl.options, o => o.value === old)) whoEl.value = old;
+  }
+  applyFilter();
+}
+
+/* 新增：只过滤已加载消息，命中行整行高亮（不改写正文，保留表情与 @ 链接） */
+function applyFilter() {
+  const q = (searchEl.value || '').trim().toLowerCase();
+  const who = whoEl.value;
+  const rows = Array.prototype.slice.call(log.querySelectorAll('.msg[data-id]'));
+  rows.forEach(r => {
+    const m = r._ffMsg || {};
+    const text = String(m.text || '').toLowerCase();
+    const nick = String(m.nickname || '').toLowerCase();
+    const okText = !q || text.indexOf(q) >= 0 || nick.indexOf(q) >= 0;
+    const whoName = m.kind === 'system' ? '〔系统〕' : String(m.nickname || '');
+    const okWho = !who || whoName === who;
+    const show = okText && okWho;
+    r.hidden = !show;
+    r.classList.toggle('hit', !!q && show);
+  });
+}
+
+searchEl.oninput = async () => {
+  if (!fullLoaded) await ensureAllLoaded();
+  applyFilter();
+};
+whoEl.onchange = applyFilter;
+document.getElementById('arch-earlier').onclick = () => { if (cur && hasMore) ensureAllLoaded().catch(() => {}); };
+document.getElementById('arch-back').onclick = showList;
+document.getElementById('arch-to-start').onclick = () => scrollEl.scrollTo({ top: 0, behavior: 'smooth' });
+document.getElementById('arch-to-latest').onclick = () => scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
+
+/* 新增：带 #m编号 打开时，翻到那条并高亮；找不到就退回存档列表 */
+async function jumpFromHash() {
+  const mm = /^#m(\d+)$/.exec(location.hash || '');
+  if (!mm) return false;
+  const target = Number(mm[1]);
+  let list = [];
+  try { list = await FF.api('/api/chat/archives'); } catch (e) { return false; }
+  const a = list.find(x => target >= x.firstId && target <= x.lastId);
+  if (!a) return false;
+  await openArchive(a);
+  await ensureAllLoaded();
+  const row = log.querySelector('.msg[data-id="' + target + '"]');
+  if (row) {
+    row.scrollIntoView({ block: 'center' });
+    row.classList.add('flash');
+    setTimeout(() => row.classList.remove('flash'), 6000);
+  }
+  return true;
+}
+
+(async () => {
+  await FF.renderHeader();
+  await FF.loadEmojis();
+  if (!(await jumpFromHash())) showList();
+})();
+</script>
+</body>
+</html>

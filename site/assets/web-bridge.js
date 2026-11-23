@@ -193,12 +193,12 @@
           /* 投稿人与设主都按页面填写的文本提交，不再由登录账号代替 */
           author: (document.querySelector('#author') || {}).value ? document.querySelector('#author').value.trim() : '',
           owner: (document.querySelector('#owner') || {}).value ? document.querySelector('#owner').value.trim() : '',
-          /* 是否公开：公开→调查委托，不公开→怪谈故事 */
-          public: (document.querySelector('input[name="visibility"]:checked') || {}).value === 'no' ? 'no' : 'yes',
+          /* 投稿统一归入「怪谈故事」 */
+          public: 'no',
           portrait: hasPortrait ? await reencode(portrait.src, 0, 0.85) : null,
           card
         });
-        const where = document.querySelector('input[name="visibility"]:checked') && document.querySelector('input[name="visibility"]:checked').value === 'no' ? '怪谈故事' : '调查委托';
+        const where = '怪谈故事';
         setStatus((result.status === 'approved' ? '投稿成功，已放入怪谈档案，并同步发帖到「' + where + '」。' : '投稿已提交，等待管理员审核；帖子已同步到「' + where + '」。'));
         notify({ tool: 'guaitan', ok: true, status: result.status });
       } catch (err) {

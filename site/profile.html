@@ -60,10 +60,72 @@
 .tz-bubble::after { content: ""; position: absolute; top: -6px; left: 22px; border: 6px solid transparent; border-bottom-color: #fff; border-top: none; }
 @media (max-width: 640px) { .pf-ascii .pf-text { font-size: 12px; } }
 
+.gb-checkin { color: var(--dim, #888); }
+.gb-replies { margin: 8px 0 0 34px; border-left: 2px solid #2a2d30; padding-left: 10px; display: grid; gap: 6px; }
+.gb-reply { font-size: 12px; line-height: 1.6; }
+.gb-reply-meta { color: var(--dim, #888); }
+.gb-reply-meta a { color: #9bd9ff; }
+.gb-reply-body { color: var(--ink, #ddd); }
+.gb-reply-body .rb-auto { color: #ffd76e; }
+.gb-reply-del { background: none; border: none; color: #777; font: 11px var(--mono), monospace; cursor: pointer; padding: 0; }
+.gb-reply-del:hover { color: #ff5940; }
+.gb-reply-form { display: flex; gap: 8px; margin: 8px 0 0 34px; }
+.gb-reply-form input { flex: 1; background: #0b0d0e; border: 1px solid #333; color: var(--ink, #ddd); font: 12px var(--mono), monospace; padding: 6px 8px; }
+.gb-reply-btn { background: none; border: 1px solid #3a3a3a; color: #9bd9ff; font: 11px var(--mono), monospace; padding: 2px 8px; cursor: pointer; }
+.gb-reply-btn:hover { border-color: #9bd9ff; }
+@media (max-width: 640px) { .gb-replies, .gb-reply-form { margin-left: 18px; } }
 /* 管理员禁言栏 + 被禁言用户灰色滤镜 */
 .tz-adminbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; padding: 10px 14px; border: 1px solid #4d6b8a; background: #0d1420; }
 .tz-adminbar-t { color: #9bd9ff; font: 13px var(--mono), monospace; }
 body.muted-view .layout.single { filter: grayscale(1) contrast(.92); }
+
+/* 成长记录：沿用个人主页（psheet）的暗红框线风格 */
+.grow-win { max-width: 1000px; margin: 0 auto; border: 2px solid #7a3630; background: #0b0e13; box-shadow: 5px 6px 0 #000a; }
+.grow-win-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; font-size: 17px; letter-spacing: 2px; color: #ffd0bb;
+  border-bottom: 1px dashed #89514b; background: #131922;
+}
+.grow-win-bar small { font: 11px var(--mono), monospace; color: #8b7f7a; letter-spacing: .16em; }
+.grow-win-body { padding: 14px; }
+.grow-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.grow-lv { flex: none; font: bold 14px var(--mono), monospace; letter-spacing: .1em; color: #ff9c83; }
+.grow-title { flex: none; color: #f0e0d8; font-size: 13px; letter-spacing: 2px; }
+.grow-bar { flex: 1 1 140px; min-width: 110px; height: 8px; background: #0b0e13; border: 1px solid #5b3a37; position: relative; overflow: hidden; }
+.grow-bar i { position: absolute; inset: 0 auto 0 0; background: #ad2217; }
+.grow-score { flex: none; font: 11px var(--mono), monospace; color: #8b7f7a; letter-spacing: .06em; }
+.ach-btn {
+  flex: none; cursor: pointer; padding: 3px 9px;
+  font: 11px var(--mono), monospace; letter-spacing: .06em;
+  color: #ff9c83; background: #131922; border: 1px solid #a83b2c;
+}
+.ach-btn:hover { color: #ffd0bb; border-color: #c94c36; background: #1a1012; }
+.grow-stats { margin-top: 10px; padding-top: 9px; border-top: 1px dashed #5b3a37; font: 11px var(--mono), monospace; color: #8b7f7a; letter-spacing: .06em; }
+.grow-stats b { color: #c9b6ae; font-weight: normal; }
+/* 成就面板：只有图标与名字 */
+.ach-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; font: 11px var(--mono), monospace; color: #8b7f7a; letter-spacing: .12em; }
+.ach-head b { color: #ffd0bb; font-size: 13px; letter-spacing: 2px; }
+.ach-note { margin: -4px 0 10px; font: 11px var(--mono), monospace; color: #8b7f7a; letter-spacing: .06em; }
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+.ach-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid #3a2a28; background: #0b0e13; }
+.ach-item .ico { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid #4a3532; color: #6b5a57; font: 12px var(--mono), monospace; }
+.ach-item .nm { font-size: 12px; color: #7a6b68; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ach-item.on { border-color: #7a3630; background: #140e10; }
+.ach-item.on .ico { color: #ff9c83; border-color: #a83b2c; }
+.ach-item.on .nm { color: #f0e0d8; }
+/* 手机端：进度条独占一行，成就两列，避免一行挤满 */
+@media (max-width: 640px) {
+  .grow-win { box-shadow: 3px 4px 0 #000a; }
+  .grow-win-bar { font-size: 15px; padding: 8px 10px; }
+  .grow-win-body { padding: 12px; }
+  .grow-line { gap: 8px; }
+  .grow-lv, .grow-title { font-size: 12px; }
+  .grow-score { margin-left: auto; }
+  .grow-bar { order: 9; flex: 1 1 100%; height: 7px; }
+  .ach-btn { padding: 4px 9px; }
+  .ach-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .ach-item { padding: 8px; }
+}
 </style>
 </head>
 <body data-section="me" data-section-name="用户主页">
@@ -78,10 +140,18 @@ body.muted-view .layout.single { filter: grayscale(1) contrast(.92); }
     </div>
     <p class="status" id="status" role="status"></p>
     <div id="sheet-box"></div>
+
+    <!-- 成长记录：等级 / 成就（小按钮展开），置于人设卡入口之上 -->
+    <section class="grow-win" style="margin-top:18px">
+      <div class="grow-win-bar"><span>成长记录</span><small>LEVEL / ACHIEVEMENTS</small></div>
+      <div class="grow-win-body"><div id="grow-box"><p class="hint">读取中…</p></div></div>
+    </section>
+
     <details class="origin-card" id="origin-card" hidden>
       <summary>查看人设卡</summary>
       <div class="origin-inner"><img id="origin-img" alt="人设卡"></div>
     </details>
+
     <section class="win" id="guestbook-win" style="margin-top:18px">
       <div class="win-bar"><span class="bar-title">访客留言 <small>GUESTBOOK</small></span><span class="bar-sub" id="gb-cnt"></span><span class="corner" aria-hidden="true">×</span></div>
       <div class="win-body">
@@ -107,6 +177,64 @@ const multi = (label, val) =>
   '<div class="pf-block"><h3>' + FF.esc(label) + '</h3><div class="pf-text">' +
   (val ? FF.esc(val).replace(/\n/g, '<br>') : '<span class="pf-empty">（未填写）</span>') + '</div></div>';
 
+/* 关注按钮（新增：关注功能）：仅已过审账号可见，不能关注自己与无主页角色 */
+function isFollowing(id) { return !!(me && me.following && me.following.includes(id)); }
+function followBtnHtml(u) {
+  if (!me || !me.user || me.user.status !== 'approved' || me.user.id === u.id || u.noProfile) return '';
+  const on = isFollowing(u.id);
+  return '<button class="btn' + (on ? '' : ' primary') + '" type="button" id="follow-btn" data-on="' + (on ? '1' : '0') + '" style="margin-top:8px">' +
+    (on ? '已关注 · 取消关注' : '＋ 关注') + '</button>';
+}
+function bindFollowBtn(u) {
+  const btn = $('follow-btn');
+  if (!btn) return;
+  btn.onclick = async () => {
+    const want = btn.dataset.on !== '1';
+    btn.disabled = true;
+    try {
+      const r = await FF.api('/api/users/' + encodeURIComponent(u.id) + '/follow', { body: { follow: want } });
+      if (me) me.following = want ? (me.following || []).concat(u.id) : (me.following || []).filter(x => x !== u.id);
+      btn.dataset.on = r.following ? '1' : '0';
+      btn.textContent = r.following ? '已关注 · 取消关注' : '＋ 关注';
+      btn.classList.toggle('primary', !r.following);
+    } catch (err) { btn.textContent = err.message; }
+    finally { btn.disabled = false; }
+  };
+}
+
+/* 举报：个人主页按钮，选择理由后给被举报者推送一条站内消息；后台不审核、不改用户状态（新增：举报通知） */
+const REPORT_REASONS = [
+  '该用户发布广告信息', '该用户可能不是人类', '该用户发布违法信息',
+  '该用户发布不实信息', '没什么纯粹急了'
+];
+function bindReportBtn(u) {
+  const btn = $('report-btn');
+  if (!btn) return;
+  btn.onclick = () => {
+    const back = FF.openModal(
+      '<h3 style="margin:0 0 12px;color:#ff5940">举报 · ' + FF.esc(u.nickname) + '</h3>' +
+      '<div id="report-reasons">' +
+        REPORT_REASONS.map((r, i) => '<button class="btn ghost report-reason" type="button" data-i="' + i + '" style="display:block;width:100%;text-align:left;margin:6px 0">' + FF.esc(r) + '</button>').join('') +
+      '</div>', true);
+    back.querySelectorAll('.report-reason').forEach(el => {
+      el.onclick = async () => {
+        back.querySelectorAll('.report-reason').forEach(x => { x.disabled = true; });
+        const reason = REPORT_REASONS[Number(el.dataset.i)];
+        let html;
+        try {
+          await FF.api('/api/users/' + encodeURIComponent(u.id) + '/report', { body: { reason } });
+          html = '<p class="status">已提交：' + FF.esc(reason) + '<br>对方会收到一条举报通知，后台不会审核。</p>';
+        } catch (err) {
+          html = '<p class="status">提交失败：' + FF.esc(err.message) + '</p>';
+        }
+        back.querySelector('#report-reasons').innerHTML =
+          html + '<button class="btn primary" type="button" id="report-done" style="margin-top:10px">知道了</button>';
+        back.querySelector('#report-done').onclick = () => back.remove();
+      };
+    });
+  };
+}
+
 function renderSheet(u) {
   const p = u.public || {};
   $('bar-name').textContent = '怪啖论坛 » ' + u.nickname + ' 的主页';
@@ -119,16 +247,28 @@ function renderSheet(u) {
         '<div class="ps-identity">' +
           '<img class="ps-avatar" src="' + FF.esc(u.avatar || '') + '" alt="头像">' +
           '<div><h1>' + FF.esc(u.nickname) + (u.banned ? ' <span class="ban-tag">已禁封</span>' : '') + (u.muted ? ' <span class="mute-tag">已禁言</span>' : '') + '</h1>' +
-          '<div class="kicker cool">PLAYER / ' + FF.esc(u.playerName || '（匿名）') + '</div></div>' +
+          '<div class="kicker cool">PLAYER / ' + FF.esc(u.playerName || '（匿名）') + '</div>' +
+          followBtnHtml(u) +
+          '<button class="btn ghost" type="button" id="report-btn" style="margin-top:8px;margin-left:6px">⚑ 举报</button>' +
+          '</div>' +
         '</div>' +
         '<div class="ps-cols">' +
           '<section class="ps-win"><div class="ps-win-bar">公开资料 <small>PUBLIC PROFILE</small></div><div class="ps-win-body">' +
             field('性别', p.gender || '保密') + field('年龄', p.age) + multi('个性签名', p.signature) + multi('个人简介', p.intro) +
           '</div></section>' +
         '</div>' +
-        (u.portrait ? '<section class="ps-win"><div class="ps-win-bar">个人形象 <small>PORTRAIT</small></div><div class="ps-win-body ps-portrait"><img loading="lazy" decoding="async" src="' + FF.esc(u.portrait) + '" alt="立绘"></div></section>' : '') +
+        (u.portrait ? '<section class="ps-win"><div class="ps-win-bar">个人形象 <small>PORTRAIT</small></div><div class="ps-win-body ps-portrait"><img id="ps-portrait-img" loading="lazy" decoding="async" src="' + FF.esc(u.portrait) + '" alt="立绘"></div></section>' : '') +
       '</div>' +
     '</div>';
+  /* 关注按钮绑定（新增：关注功能） */
+  bindFollowBtn(u);
+  /* 举报演示按钮绑定（新增：举报演示按钮） */
+  bindReportBtn(u);
+  /* 个人形象叠加黑方块：点黑块本次揭开（新增：黑方块打码） */
+  if (u.portrait && u.masks && u.masks.portrait && u.masks.portrait.length) {
+    const pimg = document.getElementById('ps-portrait-img');
+    if (pimg) FF.maskOverlay(pimg, u.masks.portrait);
+  }
   /* ASCII 框线简介：等宽字体 + 横向滑动，窄屏不再切边错位（仅框线字符内含时启用，散文简介不受影响） */
   [...document.querySelectorAll('.pf-block')].forEach(b => {
     const t = (b.querySelector('.pf-text') || {}).textContent || '';
@@ -137,6 +277,65 @@ function renderSheet(u) {
   const origin = $('origin-card');
   if (u.card) { $('origin-img').src = u.card; origin.hidden = false; }
   else origin.hidden = true;
+}
+
+/* 成长记录渲染（等级 / 成就）：成就收进小按钮，点开才显示图标与名字 */
+function toast(msg) { $('status').textContent = msg; setTimeout(() => { if ($('status').textContent === msg) $('status').textContent = ''; }, 2600); }
+let achDefs = [];
+function achCount(u) {
+  const got = u.achievements || {};
+  return achDefs.filter(a => got[a.id]).length;
+}
+function openAchPanel(u) {
+  const got = u.achievements || {};
+  const list = achDefs.map(a => {
+    const on = !!got[a.id];
+    return '<div class="ach-item' + (on ? ' on' : '') + '">' +
+      '<span class="ico">' + FF.esc(on ? a.icon : '?') + '</span>' +
+      '<span class="nm">' + FF.esc(a.name) + '</span></div>';
+  }).join('');
+  const st = FF.notifyState();
+  const notice =
+    st === 'granted' ? '<div class="ach-note">解锁时会弹系统通知</div>'
+      : st === 'denied' ? '<div class="ach-note">系统通知已被浏览器拦截，可在地址栏站点设置里恢复</div>'
+        : st === 'unsupported' ? '<div class="ach-note">当前浏览器不支持系统通知</div>'
+          : '<div class="ach-note"><button class="ach-btn" type="button" id="ach-notify">开启系统通知</button></div>';
+  const back = FF.openModal(
+    '<div class="ach-head"><b>成就</b><span>' + achCount(u) + ' / ' + achDefs.length + '</span></div>' +
+    notice +
+    (list ? '<div class="ach-grid">' + list + '</div>' : '<p class="hint">成就列表加载失败。</p>')
+  );
+  const nb = back.querySelector('#ach-notify');
+  if (nb) nb.onclick = async () => {
+    await FF.askNotifyPermission();
+    back.remove();
+    openAchPanel(u);
+  };
+}
+function renderGrowth(u) {
+  const lv = u.level || { lv: 1, title: '无名访客', score: 0, percent: 0, stats: {} };
+  const s = lv.stats || {};
+  $('grow-box').innerHTML =
+    '<div class="grow-line">' +
+      '<span class="grow-lv">LV ' + lv.lv + '</span>' +
+      '<span class="grow-title">' + FF.esc(lv.title) + '</span>' +
+      '<div class="grow-bar"><i style="width:' + lv.percent + '%"></i></div>' +
+      '<span class="grow-score">' + lv.score + (lv.nextScore != null ? ' / ' + lv.nextScore : ' · 满') + '</span>' +
+      '<button class="ach-btn" type="button" id="ach-btn">成就 ' + achCount(u) + '/' + achDefs.length + '</button>' +
+    '</div>' +
+    '<div class="grow-stats">发帖 <b>' + (s.threads || 0) + '</b>　获赞 <b>' + (s.likes || 0) + '</b>　档案 <b>' + (s.archives || 0) + '</b></div>';
+  $('ach-btn').onclick = () => openAchPanel(u);
+}
+function isSelf(u) {
+  return !!(me && me.user && me.user.id === u.id);
+}
+async function loadGrowth(u) {
+  try {
+    if (!achDefs.length) achDefs = await FF.api('/api/achievements');
+    renderGrowth(u);
+  } catch (err) {
+    $('grow-box').innerHTML = '<p class="hint">读取失败：' + FF.esc(err.message) + '</p>';
+  }
 }
 
 let me = null;
@@ -169,6 +368,24 @@ function renderGbForm() {
   };
 }
 
+/* 回复列表 HTML（新增：留言回复） */
+function gbRepliesHtml(g) {
+  const rs = g.replies || [];
+  if (!rs.length) return '';
+  return '<div class="gb-replies">' + rs.map(r => {
+    const who = r.authorId
+      ? '<a href="profile.html?id=' + FF.esc(r.authorId) + '">' + FF.esc(r.author) + '</a>'
+      : FF.esc(r.author || '匿名');
+    const del = r.canDelete
+      ? '<button class="gb-reply-del" type="button" data-id="' + FF.esc(r.id) + '" data-gid="' + FF.esc(g.id) + '">删除</button>'
+      : '';
+    return '<div class="gb-reply">' +
+      '<span class="gb-reply-meta">' + who + ' · ' + FF.fmtTime(r.createdAt) + '</span>' + del +
+      '<div class="gb-reply-body">' + FF.esc(r.body).replace(/\n/g, '<br>') + '</div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
 function renderGbList(list) {
   $('gb-cnt').textContent = list.length + ' 条';
   const box = $('gb-list');
@@ -192,8 +409,45 @@ function renderGbList(list) {
         '<div class="gb-meta">' + who + '<span class="time">' + FF.fmtTime(g.createdAt) + '</span></div>' + del +
       '</div>' +
       '<div class="gb-body">' + bodyHtml + '</div>' +
+      gbRepliesHtml(g) +
+      (me && me.user && !g.deleted ? '<div class="gb-reply-bar"><button class="gb-reply-btn" type="button" data-id="' + FF.esc(g.id) + '">回复</button></div>' : '') +
     '</div>';
   }).join('');
+  /* 绑定回复交互（新增：留言回复） */
+  box.querySelectorAll('.gb-reply-btn').forEach(btn => {
+    btn.onclick = () => {
+      const item = btn.closest('.gb-item');
+      let form = item.querySelector('.gb-reply-form');
+      if (form) { form.remove(); return; }   /* 再点一次收起 */
+      form = document.createElement('div');
+      form.className = 'gb-reply-form';
+      form.innerHTML = '<input type="text" maxlength="500" placeholder="回复这条留言……">' +
+        '<button class="gb-reply-btn" type="button">发送</button>';
+      btn.closest('.gb-reply-bar').before(form);
+      const input = form.querySelector('input');
+      input.focus();
+      form.querySelector('button').onclick = async () => {
+        const body = input.value.trim();
+        if (!body) { $('status').textContent = '回复内容不能为空。'; return; }
+        try {
+          await FF.api('/api/guestbook/' + encodeURIComponent(btn.dataset.id) + '/reply', { body: { body } });
+          $('status').textContent = '回复已发送。';
+          await loadGuestbook();
+        } catch (err) { $('status').textContent = err.message; }
+      };
+      input.onkeydown = e => { if (e.key === 'Enter') form.querySelector('button').click(); };
+    };
+  });
+  box.querySelectorAll('.gb-reply-del').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('确定删除这条回复？')) return;
+      try {
+        await FF.api('/api/guestbook/' + encodeURIComponent(btn.dataset.gid) + '/reply-delete', { body: { replyId: btn.dataset.id } });
+        $('status').textContent = '回复已删除。';
+        await loadGuestbook();
+      } catch (err) { $('status').textContent = err.message; }
+    };
+  });
   box.querySelectorAll('.gb-del').forEach(btn => {
     btn.onclick = async () => {
       if (!confirm('确定删除这条留言？')) return;
@@ -222,6 +476,22 @@ async function loadGuestbook() {
     me = await FF.session();
     const u = await FF.api('/api/users/' + encodeURIComponent(uid) + '/public');
     renderSheet(u);
+    /* 看自己的空间时给出账号操作入口（me.html 现在直接跳到本页） */
+    if (isSelf(u)) {
+      const bar = document.querySelector('.toolbar-strip');
+      const editLink = document.createElement('a');
+      editLink.className = 'btn';
+      editLink.href = 'me.html?edit=1';
+      editLink.textContent = '修改账号';
+      const swLink = document.createElement('button');
+      swLink.type = 'button';
+      swLink.className = 'btn';
+      swLink.textContent = '切换账号';
+      swLink.onclick = () => FF.switchAccount();
+      bar.insertBefore(swLink, bar.lastElementChild);
+      bar.insertBefore(editLink, swLink);
+    }
+    loadGrowth(u);   // 成长记录：等级 / 成就（签到入口在站点头部导航）
     /* 「???」的档案页是陷阱：没有人设卡和评论区，点「查看人设卡」会看到它 */
     if (u.nickname === '???') {
       FF.startUnknownGlitch();
@@ -231,6 +501,10 @@ async function loadGuestbook() {
       origin.addEventListener('click', e => {
         e.preventDefault();
         origin.open = false;
+        /* 成就：这是？ = 点开 ??? 的人设卡（仅登入账号，失败静默） */
+        FF.api('/api/achievements/unlock', { body: { id: 'is_this' } })
+          .then(r => { if (r && r.unlocked && r.achievement) FF.notifyAchievement(r.achievement); })
+          .catch(() => {});
         mysteryEyes();
       });
       return;

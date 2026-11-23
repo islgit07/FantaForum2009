@@ -40,18 +40,145 @@ function render() {
     '<figcaption class="cap"><div class="name"><span class="tag ' + p.type + '">' + (p.type === 'puzzle' ? '【谜题】' : '【战斗】') + '</span>' + FF.esc(p.name) + '</div>' +
     '<div class="sub">@' + FF.esc(p.author) + ' · ' + FF.fmtTime(p.createdAt) + (p.closed ? ' · STATUS/CLOSED' : ' · STATUS/OPEN') + '</div></figcaption></figure>'
   ).join('') : '<p class="hint">没有符合条件的怪谈档案。</p>';
+  /* 列表卡面叠加黑块：点黑块本次揭开，不打开详情 */
+  grid.querySelectorAll('.post-card').forEach((fig, i) => {
+    const item = list[i];
+    if (item && item.masks && item.masks.card && item.masks.card.length) {
+      FF.maskOverlay(fig.querySelector('img'), item.masks.card);
+    }
+  });
 }
 function openPost(id) {
   const p = posts.find(x => x.id === id);
   if (!p) return;
-  FF.openModal(
-    '<img class="full" src="' + FF.esc(p.card || '') + '" alt="' + FF.esc(p.name) + ' 卡面">' +
+  const back = FF.openModal(
+    '<img class="full" id="post-card-img" src="' + FF.esc(p.card || '') + '" alt="' + FF.esc(p.name) + ' 卡面">' +
     '<div style="margin-top:14px">' +
     '<div class="profile-section"><h3>怪谈影响范围</h3><p>' + (FF.esc(p.area) || '（未填写）') + '</p></div>' +
     '<div class="profile-section"><h3>怪谈机制</h3><p>' + (FF.esc(p.mechanism) || '（未填写）') + '</p></div>' +
     '<div class="profile-section"><h3>' + (p.type === 'puzzle' ? '谜底 / 解题思路' : '怪谈对策') + '</h3><p>' + (FF.esc(p.countermeasures) || '（未填写）') + '</p></div>' +
-    '<div class="profile-section"><h3>投稿信息</h3><p>投稿人 @' + FF.esc(p.author) + '　设主 ' + FF.esc(p.owner || '（匿名）') + '　' + FF.fmtTime(p.createdAt) + '<br>公共创作素材：' + (p.sharing === 'yes' ? '是（暂未处理）' : '否（已处理，仅归档）') + '</p></div>' +
+    '<div class="profile-section"><h3>投稿信息</h3><p>投稿人 @' + FF.esc(p.author) + '　设主 ' + FF.esc(p.owner || '（匿名）') + '　' + FF.fmtTime(p.createdAt) + (p.editedAt ? ' · 已编辑 ' + FF.fmtTime(p.editedAt) : '') + '<br>公共创作素材：' + (p.sharing === 'yes' ? '是（暂未处理）' : '否（已处理，仅归档）') + '</p></div>' +
+    (p.canEdit ? '<div style="margin-top:12px"><button class="btn primary" type="button" id="post-edit-btn">编辑档案</button></div>' : '') +
     '</div>', true);
+  if (p.masks && p.masks.card && p.masks.card.length) {
+    FF.maskOverlay(back.querySelector('#post-card-img'), p.masks.card);
+  }
+  const eb = back.querySelector('#post-edit-btn');
+  if (eb) eb.onclick = () => { back.remove(); openPostEdit(p); };
+}
+
+/* 图片压缩（与制卡工具 / 后台同款） */
+function readImage(file, maxEdge) {
+  return new Promise((resolve, reject) => {
+    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024)
+      return reject(new Error('请选择 20 MB 以内的 PNG / JPG / WebP 图片。'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        try {
+          const webp = c.toDataURL('image/webp', 0.9);
+          if (webp.slice(0, 14) === 'data:image/webp') return resolve(webp);
+        } catch (e) {}
+        resolve(c.toDataURL('image/png'));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法打开。')); };
+    img.src = url;
+  });
+}
+
+/* 投稿人编辑自己的怪谈档案（新增：投稿人编辑档案）
+ * 可改文字字段 + 卡面图 / 形象图；设主、署名与打码图不动。 */
+function openPostEdit(p) {
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 12px;color:#ff5940">编辑档案 · ' + FF.esc(p.name) + '</h3>' +
+    '<div class="pf-uploads">' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">怪谈卡面</div>' +
+        '<button type="button" class="pf-upload-box card" id="pa-card-box"><img id="pa-card-img" src="' + FF.esc(p.card || '') + '"' + (p.card ? '' : ' hidden') + ' alt="卡面预览"><span>点击上传卡面</span></button>' +
+        '<input type="file" id="pa-card-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">制卡工具导出 PNG 后上传</div>' +
+        '<button class="btn ghost pf-mask-btn" type="button" data-mask="card">黑方块打码</button></div>' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">形象 / 立绘</div>' +
+        '<button type="button" class="pf-upload-box" id="pa-portrait-box"><img id="pa-portrait-img" src="' + FF.esc(p.portrait || '') + '"' + (p.portrait ? '' : ' hidden') + ' alt="形象预览"><span>点击上传形象</span></button>' +
+        '<input type="file" id="pa-portrait-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">点击图片选择文件</div>' +
+        '<button class="btn ghost pf-mask-btn" type="button" data-mask="portrait">黑方块打码</button></div>' +
+    '</div>' +
+    '<label class="lab">怪谈名称<input class="field" id="pa-name" maxlength="60" value="' + FF.esc(p.name) + '"></label>' +
+    '<label class="lab">怪谈影响范围<textarea class="field" id="pa-area" rows="3" maxlength="160">' + FF.esc(p.area || '') + '</textarea></label>' +
+    '<label class="lab">怪谈机制<textarea class="field" id="pa-mech" rows="5" maxlength="300">' + FF.esc(p.mechanism || '') + '</textarea></label>' +
+    '<label class="lab">' + (p.type === 'puzzle' ? '谜底 / 解题思路' : '怪谈对策') + '<textarea class="field" id="pa-count" rows="5" maxlength="300">' + FF.esc(p.countermeasures || '') + '</textarea></label>' +
+    '<label class="lab">类型<select class="field" id="pa-type">' +
+      '<option value="combat"' + (p.type === 'combat' ? ' selected' : '') + '>【战斗】</option>' +
+      '<option value="puzzle"' + (p.type === 'puzzle' ? ' selected' : '') + '>【谜题】</option>' +
+    '</select></label>' +
+    '<label class="lab">公共创作素材<select class="field" id="pa-sharing">' +
+      '<option value="no"' + (p.sharing === 'no' ? ' selected' : '') + '>否（仅归档）</option>' +
+      '<option value="yes"' + (p.sharing === 'yes' ? ' selected' : '') + '>是</option>' +
+    '</select></label>' +
+    '<p class="hint">仅档案投稿人本人可编辑；设主与署名不在此修改。上传新图会替换原图（原图保留备份）。</p>' +
+    '<div style="margin-top:12px"><button class="btn primary" type="button" id="pa-save">保存</button></div>' +
+    '<p class="status" id="pa-status"></p>', true);
+  const status = () => back.querySelector('#pa-status');
+  const staged = { card: null, portrait: null };
+  const stagedMasks = { card: null, portrait: null };
+  function bindUpload(slot, boxId, fileId, imgId, label, maxEdge) {
+    const box = back.querySelector('#' + boxId), file = back.querySelector('#' + fileId);
+    const img = back.querySelector('#' + imgId);
+    box.onclick = () => file.click();
+    file.onchange = async () => {
+      if (!file.files[0]) return;
+      status().textContent = '正在读取' + label + '…';
+      try {
+        staged[slot] = await readImage(file.files[0], maxEdge);
+        img.src = staged[slot]; img.hidden = false;
+        status().textContent = label + '已就绪，点「保存」生效。';
+      } catch (err) { status().textContent = err.message; }
+      file.value = '';
+    };
+  }
+  bindUpload('card', 'pa-card-box', 'pa-card-file', 'pa-card-img', '卡面', 4800);
+  bindUpload('portrait', 'pa-portrait-box', 'pa-portrait-file', 'pa-portrait-img', '形象', 2048);
+  back.querySelectorAll('[data-mask]').forEach(btn => btn.onclick = () => {
+    const slot = btn.dataset.mask, img = back.querySelector('#pa-' + slot + '-img');
+    const src = staged[slot] || (img.hidden ? null : img.src);
+    if (!src) { status().textContent = '请先上传图片，再打码。'; return; }
+    const current = stagedMasks[slot] || (p.masks && p.masks[slot]) || [];
+    FF.openBlackMask(src, slot === 'card' ? '怪谈卡面' : '形象 / 立绘', current, boxes => {
+      stagedMasks[slot] = boxes;
+      status().textContent = '已设置 ' + boxes.length + ' 块黑方块，点「保存」生效（原图不动）。';
+    });
+  });
+  back.querySelector('#pa-save').onclick = async () => {
+    status().textContent = '正在保存…';
+    try {
+      await FF.api('/api/posts/' + encodeURIComponent(p.id) + '/edit', { body: {
+        name: back.querySelector('#pa-name').value.trim(),
+        area: back.querySelector('#pa-area').value.trim(),
+        mechanism: back.querySelector('#pa-mech').value.trim(),
+        countermeasures: back.querySelector('#pa-count').value.trim(),
+        type: back.querySelector('#pa-type').value,
+        sharing: back.querySelector('#pa-sharing').value
+      } });
+      for (const slot of ['card', 'portrait']) {
+        if (staged[slot]) await FF.api('/api/posts/' + encodeURIComponent(p.id) + '/image', { body: { slot, dataUrl: staged[slot] } });
+      }
+      if (stagedMasks.card !== null || stagedMasks.portrait !== null) {
+        await FF.api('/api/posts/' + encodeURIComponent(p.id) + '/masks', { body: { masks: {
+          card: stagedMasks.card !== null ? stagedMasks.card : (p.masks && p.masks.card) || [],
+          portrait: stagedMasks.portrait !== null ? stagedMasks.portrait : (p.masks && p.masks.portrait) || []
+        } } });
+      }
+      back.remove();
+      await load();
+    } catch (err) { status().textContent = err.message; }
+  };
 }
 document.getElementById('filters').addEventListener('click', e => {
   const b = e.target.closest('button[data-f]');

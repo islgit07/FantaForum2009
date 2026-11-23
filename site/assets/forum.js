@@ -192,8 +192,8 @@ const FF = (() => {
     const back = openModal(
       '<h1 style="margin:0 0 4px;font-size:20px;letter-spacing:3px">登入怪啖论坛</h1>' +
       '<p class="kicker cool">LOGIN / CHARACTER + PLAYER</p>' +
-      '<label class="lab">角色名（设卡上的角色名字，也可填网名）<input class="field" id="login-nick" maxlength="24" autocomplete="off"></label>' +
-      '<label class="lab">玩家名（CN / 车主）<input class="field" id="login-player" maxlength="24" autocomplete="off"></label>' +
+      '<label class="lab">角色名/网名<input class="field" id="login-nick" maxlength="24" autocomplete="off"></label>' +
+      '<label class="lab">玩家名<input class="field" id="login-player" maxlength="24" autocomplete="off"></label>' +
       '<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap"><button class="btn primary" type="button" id="login-go">登入</button><a class="btn" href="register.html">还没有账号？去制卡</a></div>' +
       '<p class="status" id="login-status" role="status"></p>'
     );
@@ -205,6 +205,8 @@ const FF = (() => {
           nickname: back.querySelector('#login-nick').value,
           playerName: back.querySelector('#login-player').value
         } });
+        /* 借着这次点击的手势申请通知权限，之后解锁成就可直接弹系统通知 */
+        await askNotifyPermission();
         location.reload();
       } catch (err) { status.textContent = err.message; }
     };
@@ -273,10 +275,47 @@ const FF = (() => {
   /* SSE */
   function sse(handlers) {
     const es = new EventSource('/api/events');
+    /* 成就解锁：服务端只推给本人。所有页面共用这条连接，不必各自再开一条 */
+    es.addEventListener('achievement', e => {
+      try { notifyAchievement(JSON.parse(e.data)); } catch (err) { console.error(err); }
+    });
     for (const [name, fn] of Object.entries(handlers)) {
       es.addEventListener(name, e => { try { fn(JSON.parse(e.data)); } catch (err) { console.error(err); } });
     }
     return es;
+  }
+
+  /* ---------- 成就通知：系统通知优先，未授权时退化为页内横幅 ---------- */
+  function achBanner(def) {
+    const el = document.createElement('div');
+    el.className = 'ach-pop';
+    el.innerHTML = '<span class="ico">' + esc(def.icon || '★') + '</span>' +
+      '<span class="tx"><b>获得成就</b>' + esc(def.name) + '</span>';
+    document.body.appendChild(el);
+    setTimeout(() => el.classList.add('out'), 2600);
+    setTimeout(() => { if (el.isConnected) el.remove(); }, 3200);
+  }
+  function notifyAchievement(def) {
+    if (!def || !def.name) return;
+    achBanner(def);
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      /* 桌面端由系统接管（Windows 为右下角通知），不静音 */
+      new Notification('怪啖论坛 · 获得成就', {
+        body: def.name, icon: '/assets/openeye.webp', tag: 'ff-ach-' + (def.id || def.name)
+      });
+    } catch (err) {}
+  }
+  /* 浏览器要求「用户手势」才能申请权限，登入时顺手问一次 */
+  function askNotifyPermission() {
+    if (!('Notification' in window)) return Promise.resolve('unsupported');
+    if (Notification.permission !== 'default') return Promise.resolve(Notification.permission);
+    try { return Notification.requestPermission().catch(() => 'denied'); }
+    catch (err) { return Promise.resolve('denied'); }
+  }
+  function notifyState() {
+    if (!('Notification' in window)) return 'unsupported';
+    return Notification.permission;   // granted / denied / default
   }
 
   /* 网站之眼：被注视时睁眼；离开页面时闭眼，标题低语 */
@@ -321,6 +360,10 @@ const FF = (() => {
       '<div class="ee-actions"><button type="button" class="btn" id="ee-confirm">确认</button></div>'
     );
     first.querySelector('#ee-confirm').onclick = () => {
+      /* 成就：似乎被盯上了 = 在「请勿确认」里选了确认（需登入，失败静默） */
+      api('/api/achievements/unlock', { body: { id: 'dont_confirm' } })
+        .then(r => { if (r && r.unlocked && r.achievement) notifyAchievement(r.achievement); })
+        .catch(() => {});
       first.remove();
       const second = eeModal(
         '<p class="ee-ask">你在盯着我看吗？</p>' +
@@ -357,6 +400,121 @@ const FF = (() => {
     return back;
   }
 
+  /* 手动黑方块打码编辑器（替代旧马赛克）：
+   * 黑块按相对坐标（0~1）保存，不烙进原图——查看时才能点击揭开。
+   * 编辑：拖动画块；点已有块移除；撤销 / 清空；应用回调相对坐标数组。 */
+  function openBlackMask(src, label, initial, onApply) {
+    if (!src) return;
+    const back = openModal(
+      '<h3 style="margin:0 0 8px;color:#ff5940">黑色方块打码 · ' + esc(label || '图片') + '</h3>' +
+      '<p class="hint" style="margin:0 0 10px">按住拖动画黑方块；点击已有黑块可移除。黑块不写入原图，查看时点它即可揭开。</p>' +
+      '<div class="mask-stage"><canvas id="bm-canvas"></canvas></div>' +
+      '<div class="mask-bar">' +
+        '<button class="btn ghost" type="button" id="bm-undo">撤销一块</button>' +
+        '<button class="btn ghost" type="button" id="bm-clear">清空全部</button>' +
+        '<span class="mask-count" id="bm-count">0 块</span>' +
+        '<button class="btn" type="button" id="bm-cancel">取消</button>' +
+        '<button class="btn primary" type="button" id="bm-apply">应用</button>' +
+      '</div>' +
+      '<p class="status" id="bm-status">正在载入图片…</p>', true);
+    const cv = back.querySelector('#bm-canvas'), ctx = cv.getContext('2d');
+    const status = back.querySelector('#bm-status'), countEl = back.querySelector('#bm-count');
+    let img = null, blocks = (initial || []).map(r => ({ x: +r.x, y: +r.y, w: +r.w, h: +r.h })).filter(r => [r.x, r.y, r.w, r.h].every(Number.isFinite)), drag = null;
+
+    const draw = () => {
+      if (!img) return;
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      ctx.fillStyle = '#000';
+      for (const r of blocks) ctx.fillRect(r.x * cv.width, r.y * cv.height, r.w * cv.width, r.h * cv.height);
+      if (drag) {
+        const x = Math.min(drag.x0, drag.x1), y = Math.min(drag.y0, drag.y1);
+        const w = Math.abs(drag.x1 - drag.x0), h = Math.abs(drag.y1 - drag.y0);
+        ctx.fillStyle = 'rgba(0,0,0,.62)'; ctx.fillRect(x * cv.width, y * cv.height, w * cv.width, h * cv.height);
+        ctx.strokeStyle = '#ff5a40'; ctx.lineWidth = 2;
+        ctx.strokeRect(x * cv.width + 1, y * cv.height + 1, w * cv.width - 2, h * cv.height - 2);
+      }
+      countEl.textContent = blocks.length + ' 块';
+    };
+    const pos = e => {
+      const r = cv.getBoundingClientRect();
+      return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+    };
+    cv.addEventListener('pointerdown', e => {
+      if (!img) return;
+      const p = pos(e);
+      /* 点在已有黑块上 → 移除它（后画的优先） */
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        const r = blocks[i];
+        if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
+          blocks.splice(i, 1); draw(); return;
+        }
+      }
+      drag = { x0: Math.max(0, Math.min(1, p.x)), y0: Math.max(0, Math.min(1, p.y)), x1: Math.max(0, Math.min(1, p.x)), y1: Math.max(0, Math.min(1, p.y)) };
+      cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
+      draw();
+    });
+    cv.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const p = pos(e);
+      drag.x1 = Math.max(0, Math.min(1, p.x)); drag.y1 = Math.max(0, Math.min(1, p.y)); draw();
+    });
+    const finish = () => {
+      if (!drag) return;
+      const x = Math.min(drag.x0, drag.x1), y = Math.min(drag.y0, drag.y1);
+      const w = Math.abs(drag.x1 - drag.x0), h = Math.abs(drag.y1 - drag.y0);
+      drag = null;
+      if (w >= 0.01 && h >= 0.01) blocks.push({ x: +x.toFixed(4), y: +y.toFixed(4), w: +w.toFixed(4), h: +h.toFixed(4) });
+      draw();
+    };
+    cv.addEventListener('pointerup', finish);
+    cv.addEventListener('pointercancel', () => { drag = null; draw(); });
+    back.querySelector('#bm-undo').onclick = () => { blocks.pop(); draw(); };
+    back.querySelector('#bm-clear').onclick = () => { blocks = []; draw(); };
+    back.querySelector('#bm-cancel').onclick = () => back.remove();
+    back.querySelector('#bm-apply').onclick = () => {
+      if (!img) return;
+      back.remove();
+      onApply(blocks.slice());
+    };
+    const im = new Image();
+    im.onload = () => {
+      img = im;
+      const maxW = 640, maxH = 460;
+      const sc = Math.min(1, maxW / im.naturalWidth, maxH / im.naturalHeight);
+      cv.width = Math.max(1, Math.round(im.naturalWidth * sc));
+      cv.height = Math.max(1, Math.round(im.naturalHeight * sc));
+      cv.style.width = cv.width + 'px'; cv.style.height = cv.height + 'px';
+      status.textContent = '图片已载入：' + im.naturalWidth + '×' + im.naturalHeight;
+      draw();
+    };
+    im.onerror = () => { status.textContent = '图片载入失败。'; };
+    im.src = src;
+  }
+
+  /* 给图片套上黑块覆盖层：相对坐标转百分比，点击黑块即本次揭开（不改数据）。
+   * img 会被包进 relative 容器并返回该容器；无黑块则直接返回 img。 */
+  function maskOverlay(img, boxes) {
+    if (!img || !Array.isArray(boxes) || !boxes.length) return img;
+    const wrap = document.createElement('span');
+    wrap.className = 'mask-wrap';
+    img.parentNode.insertBefore(wrap, img);
+    wrap.appendChild(img);
+    for (const r of boxes) {
+      if (![r.x, r.y, r.w, r.h].every(Number.isFinite)) continue;
+      const b = document.createElement('i');
+      b.className = 'mask-block';
+      b.title = '点击揭开';
+      b.style.left = (r.x * 100) + '%';
+      b.style.top = (r.y * 100) + '%';
+      b.style.width = (r.w * 100) + '%';
+      b.style.height = (r.h * 100) + '%';
+      b.onclick = e => { e.stopPropagation(); b.remove(); };
+      wrap.appendChild(b);
+    }
+    return wrap;
+  }
+
   /* 点击头像 / 网名 → 访问该用户的个人主页 */
   function showProfile(userId) {
     if (!userId) return;
@@ -368,11 +526,15 @@ const FF = (() => {
     const row = document.createElement('div');
     const bodyHtml = () => msg.adminDeleted
       ? '<span class="del-mark">【管理员已删除】</span>'
-      : (msg.bannedCleared ? '<span class="banned-cleared">【已清除】</span>' : renderText(msg.text));
-    /* 记下原文并打标记，表情被删/新增时能原地重绘 */
+      : (msg.bannedCleared ? '<span class="banned-cleared">【已清除】</span>' : renderText(msg.text, msg.mentions));
+    /* 记下原文与提及表，表情被删/新增时能原地重绘 */
     const markBody = () => {
       const b = row.querySelector('.body');
-      if (b && !msg.adminDeleted && !msg.bannedCleared) { b._ffText = String(msg.text == null ? '' : msg.text); b.classList.add('ff-emoji-host'); }
+      if (b && !msg.adminDeleted && !msg.bannedCleared) {
+        b._ffText = String(msg.text == null ? '' : msg.text);
+        b._ffMentions = Array.isArray(msg.mentions) ? msg.mentions : [];
+        b.classList.add('ff-emoji-host');
+      }
     };
     if (msg.kind === 'system') {
       row.className = 'msg system';
@@ -387,7 +549,7 @@ const FF = (() => {
     row.dataset.id = msg.id;
     row.innerHTML =
       (msg.avatar ? '<img class="avatar" loading="lazy" decoding="async" src="' + esc(msg.avatar) + '" alt="头像"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' : '<span></span>') +
-      '<div><div class="meta"><span class="who"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' + esc(msg.nickname) + '</span>' + (msg.banned || msg.bannedCleared ? '<span class="ban-tag">已禁封</span>' : '') + (msg.muted ? '<span class="mute-tag">已禁言</span>' : '') + adminBadge(msg.userId) + '<span class="time">' + fmtTime(msg.ts) + '</span></div>' +
+      '<div><div class="meta"><span class="who"' + (canClick ? ' data-user="' + esc(msg.userId) + '"' : '') + '>' + esc(msg.nickname) + '</span>' + (msg.level ? '<span class="lv-tag" title="等级 LV' + msg.level + '">LV' + msg.level + '</span>' : '') + (msg.banned || msg.bannedCleared ? '<span class="ban-tag">已禁封</span>' : '') + (msg.muted ? '<span class="mute-tag">已禁言</span>' : '') + adminBadge(msg.userId) + '<span class="time">' + fmtTime(msg.ts) + '</span></div>' +
       '<div class="body">' + bodyHtml() + '</div></div>';
     markBody();
     return row;
@@ -478,35 +640,52 @@ const FF = (() => {
     return emojiData;
   }
 
-  /* 把纯文本渲染成 HTML：先转义，再把 [emoji:id] 换成图片 */
-  function renderText(text) {
+  /* 把纯文本渲染成 HTML：先转义，再把 @网名 换成主页链接、[emoji:id] 换成图片 */
+  function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function renderText(text, mentions) {
     const src = String(text == null ? '' : text);
-    if (src.indexOf('[emoji:') < 0) return esc(src);
+    const list = (Array.isArray(mentions) ? mentions : [])
+      .filter(m => m && m.id && String(m.name || '').trim())
+      .map(m => ({ id: m.id, name: String(m.name).trim(), noProfile: !!m.noProfile }))
+      .sort((a, b) => b.name.length - a.name.length);
+    if (!list.length && src.indexOf('[emoji:') < 0) return esc(src);
+    const parts = [];
+    if (list.length) parts.push('@(?:' + list.map(m => escapeRe(m.name)).join('|') + ')');
+    parts.push('\\[emoji:(\\d+)\\]');
+    const re = new RegExp(parts.join('|'), 'g');
     let out = '', i = 0, m;
-    const re = /\[emoji:(\d+)\]/g;
     while ((m = re.exec(src))) {
       out += esc(src.slice(i, m.index));
-      const em = emojiById.get(Number(m[1]));
-      out += em
-        ? '<img class="emoji" src="' + esc(em.url) + '" alt="' + esc(':' + (em.name || '表情') + ':') +
-          '" title="' + esc(em.name || '表情') + '" loading="lazy" decoding="async">'
-        : '<span class="emoji-gone" title="该表情已被删除">[表情]</span>';
+      if (m[0].charAt(0) === '@') {
+        const name = m[0].slice(1);
+        const hit = list.find(x => x.name === name);
+        out += hit && !hit.noProfile
+          ? '<a class="mention" href="' + esc('profile.html?id=' + encodeURIComponent(hit.id)) + '">@' + esc(name) + '</a>'
+          : esc(m[0]);
+      } else {
+        const em = emojiById.get(Number(m[1]));
+        out += em
+          ? '<img class="emoji" src="' + esc(em.url) + '" alt="' + esc(':' + (em.name || '表情') + ':') +
+            '" title="' + esc(em.name || '表情') + '" loading="lazy" decoding="async">'
+          : '<span class="emoji-gone" title="该表情已被删除">[表情]</span>';
+      }
       i = m.index + m[0].length;
     }
     out += esc(src.slice(i));
     return out;
   }
 
-  /* 记录原文，表情增删后可以原地重绘（不刷新页面） */
-  function fillText(el, text) {
+  /* 记录原文与提及表，表情增删后可以原地重绘（不刷新页面） */
+  function fillText(el, text, mentions) {
     if (!el) return;
     el._ffText = String(text == null ? '' : text);
+    el._ffMentions = Array.isArray(mentions) ? mentions : [];
     el.classList.add('ff-emoji-host');
-    el.innerHTML = renderText(el._ffText);
+    el.innerHTML = renderText(el._ffText, el._ffMentions);
   }
   function refreshEmojiText() {
     document.querySelectorAll('.ff-emoji-host').forEach(el => {
-      if (typeof el._ffText === 'string') el.innerHTML = renderText(el._ffText);
+      if (typeof el._ffText === 'string') el.innerHTML = renderText(el._ffText, el._ffMentions);
     });
   }
 
@@ -723,6 +902,7 @@ const FF = (() => {
     });
   }
 
-  return { api, session, esc, isUnknownUser, statusText, startUnknownGlitch, fmtTime, renderHeader, sse, openModal, openLogin, showProfile, msgRow, bindProfileClicks, switchAccount,
+  return { api, session, esc, isUnknownUser, statusText, startUnknownGlitch, fmtTime, renderHeader, sse, openModal, openBlackMask, maskOverlay, openLogin, showProfile, msgRow, bindProfileClicks, switchAccount,
+    notifyAchievement, askNotifyPermission, notifyState,
     loadEmojis, applyEmojiData, renderText, fillText, refreshEmojiText, openEmojiPicker, closeEmojiPicker: closePicker };
 })();

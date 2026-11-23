@@ -67,14 +67,14 @@ function render(d) {
   document.title = t.title + ' · 怪啖论坛';
   $('chan-name').textContent = d.channel ? '频道：' + d.channel.name : '帖子详情';
   $('t-title').textContent = t.title + (t.pinned ? ' 〔置顶〕' : '') + (t.locked ? ' 〔封锁〕' : '');
-  $('t-meta').textContent = (t.deleted ? '已删除' : FF.fmtTime(t.createdAt) + ' 发布');
+  $('t-meta').textContent = (t.deleted ? '已删除' : FF.fmtTime(t.createdAt) + ' 发布' + (t.editedAt ? ' · 已编辑 ' + FF.fmtTime(t.editedAt) : ''));
   const seal = document.getElementById('lock-seal');
   seal.hidden = !t.locked;
   seal.innerHTML = t.locked
     ? '<span class="lock-stripes"></span><span class="lock-label">⛔ 此帖已封锁 · 禁止回复</span><span class="lock-stripes"></span>'
     : '';
   $('replies').classList.toggle('locked-dim', !!t.locked);
-  FF.fillText($('t-body'), t.body);
+  FF.fillText($('t-body'), t.body, t.mentions);
   $('t-images').innerHTML = (t.images || []).map(x => '<img loading="lazy" decoding="async" src="' + FF.esc(x) + '" alt="帖子配图">').join('');
   $('t-body').classList.toggle('del-mark', !!t.deleted);
   $('reply-count').textContent = t.replyCount + ' 条';
@@ -88,6 +88,7 @@ function render(d) {
     bar.hidden = false;
   } else {
     const likeBtn = logged ? '<button class="btn like-btn' + (t.likedByMe ? ' liked' : '') + '" type="button" data-act="like">♥ ' + t.likes + '</button>' : '<span class="btn-mimic">♥ ' + t.likes + '</span>';
+    const editBtn = (logged && isOwner) ? '<button class="btn" type="button" data-act="edit">编辑</button>' : '';
     const lockBtn = (isAdmin || isOwner) ? '<button class="btn' + (t.locked ? '' : ' ghost') + '" type="button" data-act="lock">' + (t.locked ? '解除封锁' : '禁止回复') + '</button>' : '';
     const pinBtn = isAdmin ? '<button class="btn' + (t.pinned ? '' : ' ghost') + '" type="button" data-act="pin">' + (t.pinned ? '取消置顶' : '置顶') + '</button>' : '';
     const delBtn = (isAdmin || isOwner) ? '<button class="btn danger" type="button" data-act="del">删除</button>' : '';
@@ -95,9 +96,9 @@ function render(d) {
       '<div class="tm-person">' +
         avatarHtml(t.author, t.avatar, t.authorId, 'tm-avatar', t.anon || t.authorNoProfile) +
         '<div class="tm-id"><span class="tm-name"' + userAttr(t.authorId, t.anon || t.authorNoProfile) + '>' + FF.esc(t.author) + '</span>' + (t.authorBanned ? '<span class="ban-tag">已禁封</span>' : '') + adminBadge(t.authorId) + (t.authorMuted ? '<span class="mute-tag">已禁言</span>' : '') +
-        '<span class="tm-time">' + FF.fmtTime(t.createdAt) + ' 发布</span></div>' +
+        '<span class="tm-time">' + FF.fmtTime(t.createdAt) + ' 发布' + (t.editedAt ? ' · 已编辑 ' + FF.fmtTime(t.editedAt) : '') + '</span></div>' +
       '</div>' +
-      '<div class="tm-ops">' + likeBtn + lockBtn + pinBtn + delBtn + '</div>';
+      '<div class="tm-ops">' + likeBtn + editBtn + lockBtn + pinBtn + delBtn + '</div>';
     bar.hidden = false;
   }
   if (t.deleted) {
@@ -134,7 +135,7 @@ function renderReplies(t, isAdmin, isOwner, logged) {
         (r.pinned ? '<span class="pin-tag">置顶</span>' : '') +
         '<span class="rp-time">' + FF.fmtTime(r.createdAt) + '</span></div>' +
       '</div>' +
-      '<div class="rp-body">' + quote + '<span class="rp-text' + (gone ? ' del-mark' : '') + '">' + FF.renderText(r.body) + '</span></div>' +
+      '<div class="rp-body">' + quote + '<span class="rp-text' + (gone ? ' del-mark' : '') + '">' + FF.renderText(r.body, r.mentions) + '</span></div>' +
       ops +
     '</div>';
   }).join('') : '<p class="hint">还没有评论，来抢沙发吧。</p>';
@@ -150,10 +151,87 @@ function setReplyTarget(r) {
   $('reply-text').focus();
 }
 
+/* 图片压缩（与频道页发帖同款） */
+function readImage(file, maxEdge) {
+  return new Promise((resolve, reject) => {
+    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024)
+      return reject(new Error('请选择 20 MB 以内的 PNG / JPG / WebP 图片。'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        try {
+          const webp = c.toDataURL('image/webp', 0.88);
+          if (webp.slice(0, 14) === 'data:image/webp') return resolve(webp);
+        } catch (e) {}
+        resolve(c.toDataURL('image/png'));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片无法打开。')); };
+    img.src = url;
+  });
+}
+
+/* 帖主编辑自己的帖子：标题、正文、配图（最多 3 张）、匿名状态（新增：发帖人编辑）
+ * 频道与发帖人不动（管理员改这些仍走后台接口） */
+function openPostEdit() {
+  const t = cur;
+  let images = (t.images || []).slice();   // 已有链接原样回传；新上传为 data URL
+  const back = FF.openModal(
+    '<h3 style="margin:0 0 12px;color:#ff5940">编辑帖子 · ' + FF.esc(t.title) + '</h3>' +
+    '<label class="lab">标题<input class="field" id="pe-title" maxlength="120" value="' + FF.esc(t.title) + '"></label>' +
+    '<label class="lab">正文<textarea class="field" id="pe-body" rows="12" maxlength="5000">' + FF.esc(t.body) + '</textarea></label>' +
+    '<label class="lab">配图（最多 3 张，可选；重新选择文件会整体替换）<input type="file" id="pe-file" accept="image/png,image/jpeg,image/webp" multiple></label>' +
+    '<label class="lab" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="pe-anon"' + (t.anon ? ' checked' : '') + '> 匿名发布（不显示你的网名与头像）</label>' +
+    '<div id="pe-preview" class="thread-images"></div>' +
+    '<p class="hint">仅你本人可编辑自己发布的帖子；频道与发帖人不可在此修改。</p>' +
+    '<div style="margin-top:12px"><button class="btn primary" type="button" id="pe-save">保存</button></div>' +
+    '<p class="status" id="pe-status"></p>', true);
+  const preview = () => {
+    back.querySelector('#pe-preview').innerHTML = images.map((x, i) =>
+      '<span class="pe-img"><img src="' + FF.esc(x) + '" alt="预览 ' + (i + 1) + '"><button type="button" class="btn ghost pe-rm" data-i="' + i + '">移除</button></span>'
+    ).join('');
+    back.querySelectorAll('.pe-rm').forEach(btn => {
+      btn.onclick = () => { images.splice(Number(btn.dataset.i), 1); preview(); };
+    });
+  };
+  preview();
+  back.querySelector('#pe-file').onchange = async e => {
+    const files = Array.from(e.target.files || []).slice(0, 3);
+    images = [];
+    for (const f of files) {
+      try { images.push(await readImage(f, 4800)); }
+      catch (err) { back.querySelector('#pe-status').textContent = err.message; }
+    }
+    preview();
+  };
+  back.querySelector('#pe-save').onclick = async () => {
+    const status = back.querySelector('#pe-status');
+    const title = back.querySelector('#pe-title').value.trim();
+    const body = back.querySelector('#pe-body').value.trim();
+    if (!title || !body) { status.textContent = '请填写标题和正文。'; return; }
+    status.textContent = '正在保存…';
+    try {
+      await FF.api('/api/threads/' + encodeURIComponent(tid) + '/edit', { body: {
+        title, body, anon: back.querySelector('#pe-anon').checked,
+        image: images[0], image2: images[1], image3: images[2]
+      } });
+      back.remove();
+      await load();
+    } catch (err) { status.textContent = err.message; }
+  };
+}
+
 $('t-authorbar').onclick = async e => {
   const b = e.target.closest('[data-act]');
   if (!b) return;
   const act = b.dataset.act;
+  if (act === 'edit') { openPostEdit(); return; }
   if (act === 'pin' && !confirm(cur.pinned ? '取消置顶？' : '置顶这条帖子？')) return;
   if (act === 'del' && !confirm('删除这条帖子？删除后会标注操作人。')) return;
   if (act === 'lock' && !confirm(cur.locked ? '解除封锁，允许回复？' : '封锁此帖？封锁后所有人（包括管理员）都无法回复。')) return;

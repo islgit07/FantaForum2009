@@ -35,11 +35,6 @@ body.m-mobile .card .upload { pointer-events: none; }
 .m-label textarea { min-height: 56px; }
 .m-sharing { margin: 14px 0 0; color: #c9bfc0; font-size: 14px; }
 .m-sharing label { display: inline-flex; align-items: center; gap: 6px; margin: 8px 16px 0 0; }
-/* 是否公开：投稿形态选项，位于卡片之外，不进卡面截图 */
-.publish-visibility { max-width: 1000px; margin: 24px auto 0; color: #c9bfc0; font-size: 14px; line-height: 1.6; }
-.publish-visibility .vis-title { margin: 0 0 10px; letter-spacing: 1px; }
-.publish-visibility label { display: inline-flex; align-items: baseline; gap: 6px; margin: 0 24px 10px 0; }
-.publish-visibility small { color: #93a3b4; font-size: 12px; }
 </style>
 </head>
 <body data-section="publish" data-section-name="发布怪谈">
@@ -89,9 +84,6 @@ body.m-mobile .card .upload { pointer-events: none; }
 <label><input type="radio" name="sharing" value="no"><span>否</span><small>（此怪谈已处理，但也可自行创作玩法后在 if 线中给他人游玩）</small></label></section>
 <div class="archive-stamp" id="archive-stamp" hidden><span>STATUS / CLOSED</span><strong>已处理，仅归档</strong><small>ARCHIVED · FANTA FORUM</small></div><canvas class="signal-texture" id="signal-texture" width="1000" height="1580" aria-hidden="true"></canvas><footer class="credit"><span><b class="footer-brand">怪啖论坛</b> / www.FantaForum.fmi</span><label>设主<input data-field id="owner" maxlength="24" placeholder="此处填写你的cn"></label></footer>
 </article></div>
-<section class="publish-visibility"><div class="vis-title">是否公开这份怪谈</div>
-<label><input type="radio" name="visibility" value="yes" checked><span>公开</span><small>（同步发布到「调查委托」，公开征集调查者）</small></label>
-<label><input type="radio" name="visibility" value="no"><span>不公开</span><small>（同步发布到「怪谈故事」，仅作档案留存）</small></label></section>
 <p class="status" role="status"></p><input type="file" id="file" accept="image/png,image/jpeg,image/webp" hidden></main>
 
 </div>

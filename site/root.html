@@ -22,6 +22,8 @@
 .bars .col { flex: 1; display: flex; align-items: flex-end; gap: 2px; height: 100%; }
 .bars .col i { flex: 1; min-height: 1px; background: var(--red, #ed3828); display: block; }
 .bars .col i.uv { background: var(--cyan, #087481); }
+.bars .col i.rp { background: var(--amber, #ffb020); }
+.bars .col i.ps { background: #7a5cff; }
 .bars-x { display: flex; gap: 3px; margin-top: 4px; }
 .bars-x span { flex: 1; text-align: center; font-size: 10px; color: var(--dim, #888); }
 .legend { margin-top: 8px; }
@@ -79,6 +81,31 @@
       <div class="win-body" id="hw"><p class="hint">读取中…</p></div>
     </section>
 
+    <!-- 内容运营（新增：内容运营看板，仅 root 可见） -->
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">内容运营</span><span class="bar-sub">CONTENT OVERVIEW</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body">
+        <div class="chip-row" id="content-overview"><p class="hint">读取中…</p></div>
+        <div class="filter-row" style="margin:4px 0 0">
+          <span class="hint" style="align-self:center">发帖趋势</span>
+          <select class="field" id="c-days" style="width:110px">
+            <option value="7">近 7 天</option><option value="14" selected>近 14 天</option><option value="30">近 30 天</option>
+          </select>
+        </div>
+        <div id="content-trend"><p class="hint">读取中…</p></div>
+      </div>
+    </section>
+
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">频道热度</span><span class="bar-sub">CHANNEL HEAT</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body"><div class="top2" id="content-channels"><p class="hint">读取中…</p></div></div>
+    </section>
+
+    <section class="win" style="margin-bottom:16px">
+      <div class="win-bar"><span class="bar-title">活跃用户</span><span class="bar-sub">TOP 10 · 发帖+回复+档案</span><span class="corner" aria-hidden="true">×</span></div>
+      <div class="win-body" id="content-active"><p class="hint">读取中…</p></div>
+    </section>
+
     <section class="win" style="margin-bottom:16px">
       <div class="win-bar"><span class="bar-title">访问概览</span><span class="bar-sub" id="v-day-sub">—</span><span class="corner" aria-hidden="true">×</span></div>
       <div class="win-body" id="visit-today"><p class="hint">读取中…</p></div>
@@ -124,7 +151,7 @@
 const $ = id => document.getElementById(id);
 const statusEl = $('status');
 const pad = n => String(n).padStart(2, '0');
-const timers = { stats: null, visits: null };
+const timers = { stats: null, visits: null, content: null };
 let logQuery = { day: '', ip: '', p: '', page: 1 };
 
 /* ---------- 格式化 ---------- */
@@ -257,6 +284,57 @@ function renderVisits(d) {
   renderLog(d.log);
 }
 
+/* ---------- 内容运营面板（新增） ---------- */
+function contentTrend(t) {
+  const max = Math.max(1, ...t.map(x => x.threads + x.replies + x.posts));
+  let cells = '', labels = '';
+  for (const x of t) {
+    const sum = Math.max(1, x.threads + x.replies + x.posts);
+    cells += '<div class="col" title="' + x.day + '：发帖 ' + x.threads + ' / 回复 ' + x.replies + ' / 档案 ' + x.posts + '">' +
+      '<i style="height:' + Math.round(x.threads / sum * 100) + '%"></i>' +
+      '<i class="rp" style="height:' + Math.round(x.replies / sum * 100) + '%"></i>' +
+      '<i class="ps" style="height:' + Math.round(x.posts / sum * 100) + '%"></i></div>';
+    labels += '<span>' + (t.length > 14 && x.day.slice(8, 10) !== '01' && x.day.slice(8, 10) !== '15' ? '' : x.day.slice(5)) + '</span>';
+  }
+  return '<div class="bars">' + cells + '</div><div class="bars-x">' + labels + '</div>' +
+    '<p class="legend hint"><i style="background:var(--red,#ed3828)"></i>发帖　<i style="background:var(--amber,#ffb020)"></i>回复　<i style="background:#7a5cff"></i>档案（每日构成 · 高度按当日总量归一）</p>';
+}
+function channelHtml(list) {
+  const max = Math.max(1, ...list.map(x => x.threads + x.replies));
+  return '<ul class="top-list">' + (list.length ? list.map(x =>
+    '<li><span class="name" title="' + FF.esc(x.name) + '">' + FF.esc(x.name) + '</span>' +
+    '<span class="bg"><i style="width:' + Math.round((x.threads + x.replies) / max * 100) + '%"></i></span>' +
+    '<span class="num">帖' + x.threads + ' · 回' + x.replies + ' · 赞' + x.likes + '</span></li>').join('')
+    : '<li class="hint">（暂无频道）</li>') + '</ul>';
+}
+function activeHtml(list) {
+  return '<table class="table">' +
+    '<tr><th>#</th><th>用户</th><th>发帖</th><th>回复</th><th>档案</th><th>获赞</th><th>动作合计</th></tr>' +
+    (list.length ? list.map((x, i) =>
+      '<tr><td class="hint">' + (i + 1) + '</td><td>' + FF.esc(x.name) + '</td>' +
+      '<td>' + x.threads + '</td><td>' + x.replies + '</td><td>' + x.posts + '</td>' +
+      '<td>' + x.likes + '</td><td><b>' + x.actions + '</b></td></tr>').join('')
+      : '<tr><td colspan="7" class="hint">（暂无数据）</td></tr>') + '</table>';
+}
+function renderContent(d) {
+  const o = d.overview, td = o.today;
+  $('content-overview').innerHTML =
+    chip('帖子总数', o.threads) + chip('回复总数', o.replies) + chip('怪谈档案', o.posts) +
+    chip('获赞总数', o.likes) + chip('注册用户', o.users) +
+    chip('今日新增', '帖' + td.threads + ' · 回' + td.replies + ' · 档' + td.posts);
+  $('content-trend').innerHTML = contentTrend(d.trend);
+  $('content-channels').innerHTML =
+    '<div><h3>频道热度（累计）</h3>' + channelHtml(d.channels) + '</div>';
+  $('content-active').innerHTML = activeHtml(d.active);
+}
+async function refreshContent() {
+  try {
+    const days = $('c-days').value;
+    renderContent(await FF.api('/api/root/content?days=' + encodeURIComponent(days)));
+    statusEl.textContent = '';
+  } catch (err) { onErr(err); }
+}
+
 /* ---------- 拉取与轮询 ---------- */
 function onErr(err) {
   if (/root 登入/.test(err.message || '')) { showGate(); return; }
@@ -278,8 +356,8 @@ async function refreshVisits() {
   } catch (err) { onErr(err); }
 }
 function stopTimers() {
-  clearInterval(timers.stats); clearInterval(timers.visits);
-  timers.stats = timers.visits = null;
+  clearInterval(timers.stats); clearInterval(timers.visits); clearInterval(timers.content);
+  timers.stats = timers.visits = timers.content = null;
 }
 function showGate() {
   stopTimers();
@@ -294,8 +372,10 @@ async function boot() {
   $('zone').hidden = false;
   refreshStats();
   refreshVisits();
+  refreshContent();
   timers.stats = setInterval(refreshStats, 4000);
   timers.visits = setInterval(refreshVisits, 10000);
+  timers.content = setInterval(refreshContent, 15000);
 }
 
 /* ---------- 交互 ---------- */
@@ -314,7 +394,8 @@ $('btn-out').onclick = async () => {
   try { await FF.api('/api/root/logout', { body: {} }); } catch {}
   location.reload();
 };
-$('btn-refresh').onclick = () => { refreshStats(); refreshVisits(); };
+$('btn-refresh').onclick = () => { refreshStats(); refreshVisits(); refreshContent(); };
+$('c-days').onchange = () => refreshContent();
 $('btn-pass').onclick = () => {
   const back = FF.openModal(
     '<h3 style="margin:0 0 12px;color:#ff5940;letter-spacing:2px">修改 root 密码</h3>' +

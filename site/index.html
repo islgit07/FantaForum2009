@@ -14,6 +14,7 @@
       <div class="win-bar">
         <span class="bar-title">公共聊天室</span>
         <span class="bar-sub">PUBLIC CHAT / LIVE</span>
+        <a class="arch-entry" id="arch-entry" href="chat-archive.html" hidden title="查看聊天存档">存档</a>
         <span class="corner" aria-hidden="true">×</span>
       </div>
       <div class="chat-log scan" id="chat-log" aria-live="polite"></div>
@@ -95,13 +96,32 @@ log.addEventListener('scroll', () => { stick = log.scrollTop + log.clientHeight 
 function appendMsg(msg) {
   if (msg.id <= lastId) return;
   lastId = msg.id;
+  const emptyHint = log.querySelector('.arch-empty');
+  if (emptyHint) emptyHint.remove();
   log.appendChild(FF.msgRow(msg));
   if (stick) log.scrollTop = log.scrollHeight;
 }
+/* 存档入口：标题栏上的小按钮，手机端也不占聊天区空间（新增：聊天存档功能） */
+async function renderArchiveEntry() {
+  const entry = document.getElementById('arch-entry');
+  try {
+    const list = await FF.api('/api/chat/archives');
+    if (!list.length) { entry.hidden = true; return; }
+    const total = list.reduce((s, a) => s + (a.count || 0), 0);
+    entry.textContent = '存档 ' + total;
+    entry.title = '查看 ' + list.length + ' 卷聊天存档，共 ' + total + ' 条消息';
+    entry.hidden = false;
+  } catch (e) { entry.hidden = true; }
+}
 async function loadMessages() {
   const list = await FF.api('/api/messages');
-  list.forEach(appendMsg);
-  log.scrollTop = log.scrollHeight;
+  if (!list.length) {
+    log.innerHTML = '<div class="msg system arch-empty"><div class="body">存档之后还没有新消息，从你这里开始吧。</div></div>';
+  } else {
+    list.forEach(appendMsg);
+    log.scrollTop = log.scrollHeight;
+  }
+  renderArchiveEntry();
 }
 
 function renderMe(s) {
@@ -111,11 +131,33 @@ function renderMe(s) {
     return;
   }
   const u = s.user;
+  /* 签到：只放在「当前账号」模块里（已过审账号可见），当日已签则显示连续天数 */
+  const canSign = u.status === 'approved' && !u.banned;
+  const signed = !!(u.checkin && u.checkin.todayDone);
   meBox.innerHTML =
     '<div class="me-row"><img src="' + FF.esc(u.avatar || '') + '" alt="头像"><div><div class="name">' + FF.esc(u.nickname) + '</div>' +
     '<div class="hint">' + FF.statusText(u) + '</div></div></div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><a class="btn" href="me.html">我的主页</a><button class="btn ghost" type="button" id="side-switch">切换账号</button></div>';
+    '<div class="me-actions">' +
+      '<a class="btn" href="me.html">我的主页</a>' +
+      '<button class="btn ghost" type="button" id="side-switch">切换账号</button>' +
+      (canSign
+        ? (signed
+          ? '<span class="me-sign" id="side-sign">已签到 · 连续 ' + (u.checkin.streak || 0) + ' 天</span>'
+          : '<button class="btn primary me-sign-btn" type="button" id="side-sign">签到</button>')
+        : '') +
+    '</div>';
   document.getElementById('side-switch').onclick = doSwitch;
+  const sign = document.getElementById('side-sign');
+  if (sign && sign.tagName === 'BUTTON') sign.onclick = async () => {
+    sign.disabled = true;
+    sign.textContent = '签到中…';
+    try {
+      const r = await FF.api('/api/checkin', { body: {} });
+      sign.outerHTML = '<span class="me-sign" id="side-sign">已签到 · 连续 ' + r.checkin.streak + ' 天</span>';
+    } catch (err) {
+      sign.outerHTML = '<span class="me-sign" id="side-sign">' + FF.esc(err.message) + '</span>';
+    }
+  };
 }
 
 /* 统一的切换账号入口：已登录→同玩家账号切换弹窗；未登录→登入弹窗 */

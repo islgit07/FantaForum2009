@@ -14,5 +14,13 @@
 <body>
   <div class="n404">404</div>
   <div class="line">这个页面好像被吃掉了</div>
+<script>
+/* 成就：被吃掉了 = 触发 404 界面（需登入，失败静默） */
+fetch('/api/achievements/unlock', {
+  method: 'POST', credentials: 'same-origin',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: 'eaten' })
+}).catch(() => {});
+</script>
 </body>
 </html>

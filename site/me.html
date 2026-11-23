@@ -13,8 +13,8 @@
 <div class="auth-win" id="gate" hidden>
   <h1>登入</h1>
   <p class="kicker cool">LOGIN / CHARACTER + PLAYER</p>
-  <label class="lab">角色名（设卡上的角色名字，也可填网名）<input class="field" id="login-nick" maxlength="24"></label>
-  <label class="lab">玩家名（CN / 车主）<input class="field" id="login-player" maxlength="24"></label>
+  <label class="lab">角色名/网名<input class="field" id="login-nick" maxlength="24"></label>
+  <label class="lab">玩家名<input class="field" id="login-player" maxlength="24"></label>
   <div class="actions">
     <button class="btn primary" type="button" id="login-go">登入</button>
   </div>
@@ -194,6 +194,12 @@ function openEdit(me) {
   await FF.renderHeader();
   const s = await FF.session();
   if (!s.user) { $('gate').hidden = false; return; }
+  /* 「我的主页」= 自己的个人空间（含成长记录、访客留言）；账号编辑走 me.html?edit=1
+     审核中的账号仍留在本页看审核状态 */
+  if (new URLSearchParams(location.search).get('edit') !== '1' && s.user.status === 'approved') {
+    location.replace('profile.html?id=' + encodeURIComponent(s.user.id));
+    return;
+  }
   $('zone').hidden = false;
   const me = await FF.api('/api/me');
   renderSheet(me);

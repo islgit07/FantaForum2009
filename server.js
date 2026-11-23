@@ -169,8 +169,93 @@ function isAdmin(req) {
   // 管理员角色卡登录（新路径）
   return isAdminRole(sessionUser(req));
 }
+/* ---------- 等级 / 勋章 / 成就 / 签到（新增） ----------
+ * 数据落在用户对象：achievements{id:ts} / loginDays[YYYY-MM-DD] / checkin{last,streak,total}。
+ * 等级不落库，按发帖数·获赞数·档案数实时算，数据始终与内容一致（允许刷，不做防刷）。 */
+const ACHIEVEMENTS = [
+  { id: 'hello_world',  icon: '言',  name: '你好世界',     desc: '在聊天室说第一句话' },
+  { id: 'spam_machine', icon: '刷',  name: '刷屏机器',     desc: '在聊天室连续发 4 条，中间无人插话（系统不算）' },
+  { id: 'home_forum',   icon: '坛',  name: '论坛是我家',   desc: '累计登入论坛 7 天' },
+  { id: 'dont_confirm', icon: '窥',  name: '似乎被盯上了', desc: '在弹窗「请勿确认」中选择了确认' },
+  { id: 'contributor',  icon: '贡',  name: '社区贡献值',   desc: '发布 5 条帖子' },
+  { id: 'emoji_master', icon: '表',  name: '表情包大师',   desc: '上传 5 条表情包' },
+  { id: 'cleaner',      icon: '净',  name: '净坛使者',     desc: '进行了一次举报' },
+  { id: 'heart',        icon: '心',  name: '因你心动',     desc: '关注了一个人' },
+  { id: 'is_this',      icon: '？', name: '这是？',       desc: '点开用户「???」的人设卡' },
+  { id: 'eaten',        icon: '404', name: '被吃掉了',    desc: '触发 404 界面' },
+  { id: 'night_fail',   icon: '夜',  name: '跨夜失败',     desc: '触发首页过 00:00 的彩蛋' }
+];
+/* 只有纯彩蛋类允许前端直接解锁；内容类（发帖/举报/关注等）一律由服务端判定 */
+const ACH_FRONT_UNLOCK = ['dont_confirm', 'is_this', 'eaten', 'night_fail'];
+const LEVEL_TITLES = [
+  { min: 0,    title: '无名访客' },
+  { min: 20,   title: '门外徘徊者' },
+  { min: 60,   title: '初入门径' },
+  { min: 140,  title: '热心的听众' },
+  { min: 280,  title: '怪谈记录者' },
+  { min: 500,  title: '异常调查员' },
+  { min: 850,  title: '档案守夜人' },
+  { min: 1400, title: '诡异杀手' },
+  { min: 2200, title: '一线攻略组' },
+  { min: 3500, title: '新世界' }
+];
+function beijingDay(ts) {
+  return new Date((ts || Date.now()) + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function userGrowth(u) {
+  const uid = u && u.id;
+  let threads = 0, likes = 0, archives = 0;
+  if (uid) {
+    /* 帖子维度：只统计本人发布的主题（发帖数 + 主题获赞）
+       回复维度：遍历全部未删除主题，凡本人回复不论主题作者是谁都计入获赞
+       （修正：此前回复获赞只在本人主题内统计，导致在他人主题下的回复获赞漏算） */
+    for (const t of (DB.threads || [])) {
+      if (t.deleted) continue;
+      if (t.authorId === uid) {
+        threads++;
+        likes += (t.likes || []).length;
+      }
+      for (const r of (t.replies || [])) if (!r.deleted && r.authorId === uid) likes += (r.likes || []).length;
+    }
+    for (const p of (DB.posts || [])) if (p.status === 'approved' && (p.submitterId === uid || p.authorId === uid)) archives++;
+  }
+  /* 发帖 ×10 + 获赞 ×3 + 档案 ×20 */
+  const score = threads * 10 + likes * 3 + archives * 20;
+  let idx = 0;
+  for (let i = 0; i < LEVEL_TITLES.length; i++) if (score >= LEVEL_TITLES[i].min) idx = i;
+  const cur = LEVEL_TITLES[idx], next = LEVEL_TITLES[idx + 1] || null;
+  return {
+    lv: idx + 1, title: cur.title, score,
+    nextScore: next ? next.min : null,
+    percent: next ? Math.min(100, Math.round((score - cur.min) / (next.min - cur.min) * 100)) : 100,
+    stats: { threads, likes, archives }
+  };
+}
+function unlockAchievement(u, id) {
+  const def = ACHIEVEMENTS.find(a => a.id === id);
+  if (!u || !def) return false;
+  u.achievements = u.achievements || {};
+  if (u.achievements[id]) return false;
+  u.achievements[id] = Date.now();
+  save();
+  /* 解锁瞬间推给本人：前端据此发系统通知 / 页内横幅 */
+  broadcastTo(u.id, 'achievement', { id, name: def.name, icon: def.icon, ts: u.achievements[id] });
+  return true;
+}
+function recordLoginDay(u) {
+  if (!u) return false;
+  const days = Array.isArray(u.loginDays) ? u.loginDays : (u.loginDays = []);
+  const day = beijingDay();
+  if (days.indexOf(day) >= 0) return false;
+  days.push(day);
+  if (days.length > 400) { days.splice(0, days.length - 400); }
+  if (days.length >= 7) unlockAchievement(u, 'home_forum');
+  save();
+  return true;
+}
 function publicUser(u) {
   const muted = !!u.mutedUntil && Date.now() < u.mutedUntil;
+  const c = u.checkin || {};
   return {
     id: u.id, nickname: u.nickname, playerName: u.playerName || '',
     /* 禁封账号展示封号头像，并带 banned 标记供前端显示「已禁封」（新增：禁封功能） */
@@ -179,7 +264,13 @@ function publicUser(u) {
     status: u.status,
     muted, mutedUntil: muted ? u.mutedUntil : null,
     noProfile: isNoProfileUser(u),
-    public: u.public, portrait: u.portrait || null, card: u.card || null, createdAt: u.createdAt
+    public: u.public, portrait: u.portrait || null, card: u.card || null,
+    masks: u.masks || {}, createdAt: u.createdAt,
+    /* 等级 / 勋章 / 成就 / 签到（新增） */
+    level: userGrowth(u),
+    medals: Array.isArray(u.medals) ? u.medals.slice() : [],
+    achievements: Object.assign({}, u.achievements || {}),
+    checkin: { streak: c.streak || 0, total: c.total || 0, todayDone: c.last === beijingDay() }
   };
 }
 /* 禁言判定：mutedUntil 为未来时间戳即处于禁言期 */
@@ -200,12 +291,40 @@ function publicPost(p) {
     owner: p.owner || (u && u.playerName) || null,
     area: p.area,
     mechanism: p.mechanism, countermeasures: p.countermeasures, sharing: p.sharing,
-    closed: p.closed, status: p.status, portrait: p.portrait || null, card: p.card, createdAt: p.createdAt
+    closed: p.closed, status: p.status, portrait: p.portrait || null, card: p.card,
+    masks: p.masks || {},
+    createdAt: p.createdAt, editedAt: p.editedAt || null
   };
 }
 
+/* 投稿人可编辑判定（新增：投稿人编辑档案）
+ * 实际投稿账号 submitterId 或档案署名对应账号 authorId，本人且已过审即可编辑。
+ * 匿名投稿（authorId 为空）仍可由实际投稿账号按 submitterId 认领编辑。 */
+function canEditPost(req, p) {
+  const u = sessionUser(req);
+  if (!u || u.status !== 'approved') return false;
+  return u.id === p.submitterId || (!!p.authorId && u.id === p.authorId);
+}
+
+/* 黑方块打码坐标规范化：0~1 相对坐标，每图最多 30 块（新增：黑方块打码） */
+function normMasks(input) {
+  const out = {};
+  const src = input && typeof input === 'object' ? input : {};
+  for (const slot of ['avatar', 'card', 'portrait']) {
+    if (!Array.isArray(src[slot])) continue;
+    out[slot] = src[slot].slice(0, 30).map(r => {
+      const x = Math.max(0, Math.min(1, Number(r && r.x) || 0));
+      const y = Math.max(0, Math.min(1, Number(r && r.y) || 0));
+      const w = Math.max(0.005, Math.min(1 - x, Number(r && r.w) || 0));
+      const h = Math.max(0.005, Math.min(1 - y, Number(r && r.h) || 0));
+      return { x: +x.toFixed(4), y: +y.toFixed(4), w: +w.toFixed(4), h: +h.toFixed(4) };
+    });
+  }
+  return out;
+}
+
 /* ---------- 投稿 → 频道帖子同步 ----------
- * 公开的怪谈同步到「调查委托」（公开召集调查者），不公开的归「怪谈故事」（仅作档案留存）。
+ * 所有怪谈投稿统一同步到「怪谈故事」（仅作档案留存）。
  * 帖子作者只认页面填写的投稿人文本；能对应到角色卡时挂 authorId 供点击跳转，
  * 对应不到（或「匿名」「档案」这类无主页角色）就不挂，避免化名投稿被账号暴露。
  */
@@ -215,7 +334,8 @@ function syncPostToForum(post) {
   if (!Array.isArray(DB.threads)) DB.threads = [];
   /* 同一份档案只同步一次（重复审核 / 改档都不会再发一条） */
   if (DB.threads.some(t => t.source && t.source.kind === 'archive' && t.source.postId === post.id)) return null;
-  const wantName = post.public === 'no' ? '怪谈故事' : '调查委托';
+  /* 投稿统一归入「怪谈故事」，不再按是否公开分发到调查委托 */
+  const wantName = '怪谈故事';
   const ch = DB.channels.find(c => c.name === wantName)
     || DB.channels.find(c => c.name === '怪谈故事') || DB.channels[0];
   if (!ch) return null;
@@ -247,6 +367,15 @@ const sseClients = new Set();
 function broadcast(event, data) {
   const payload = 'event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n';
   for (const res of sseClients) { try { res.write(payload); } catch {} }
+}
+/* 只推给某个账号自己的 SSE 连接（成就解锁等私人事件，不广播给其他人） */
+function broadcastTo(userId, event, data) {
+  if (!userId) return;
+  const payload = 'event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n';
+  for (const res of sseClients) {
+    const o = res.__online;
+    if (o && o.uid === userId) { try { res.write(payload); } catch {} }
+  }
 }
 setInterval(() => { for (const res of sseClients) { try { res.write(': ping\n\n'); } catch {} } }, 25000).unref();
 
@@ -280,6 +409,8 @@ function addMessage(kind, payload) {
     const u = DB.users.find(x => x.id === msg.userId);
     if (u) {
       msg.noProfile = isNoProfileUser(u); msg.muted = isMutedUser(u);
+      /* 聊天室显示发言人等级：随消息一起广播 */
+      if (!u.banned) msg.level = userGrowth(u).lv;
       /* 禁封账号发出的聊天消息直接按已清除处理，实时广播也一致（新增：禁封功能） */
       if (u.banned) {
         msg.banned = true;
@@ -548,6 +679,8 @@ function route(method, pattern, handler) { routes.push({ method, pattern, handle
 
 route('GET', /^\/api\/session$/, async (req, res) => {
   const u = sessionUser(req);
+  /* 累计登录天数（新增：成就「论坛是我家」）：按北京时间自然日去重，满 7 天解锁 */
+  if (u && u.status === 'approved') recordLoginDay(u);
   sendJSON(res, 200, {
     user: u ? Object.assign(publicUser(u), { playerName: u.playerName }) : null,
     admin: isAdmin(req),
@@ -555,8 +688,41 @@ route('GET', /^\/api\/session$/, async (req, res) => {
     config: { motd: DB.config.motd || '' },
     /* unknown 组无主页角色（匿名/档案馆/广告位）：前端据此让「根本无法点击」 */
     noProfileIds: DB.users.filter(isNoProfileUser).map(x => x.id),
+    /* 关注：带上「我关注了谁」的 id 列表，供主页按钮显示状态（新增：关注功能） */
+    following: u ? (u.following || []).slice() : [],
     unread: u ? (DB.notifications || []).filter(n => n.targetId === u.id && n.ts > (u.lastNoticeRead || 0)).length : 0
   });
+});
+
+/* 成就定义（公开，供个人主页渲染成就墙） */
+route('GET', /^\/api\/achievements$/, async (req, res) => {
+  sendJSON(res, 200, ACHIEVEMENTS);
+});
+
+/* 前端彩蛋类成就解锁：仅允许白名单内的 4 个纯彩蛋成就，内容类一律服务端判定 */
+route('POST', /^\/api\/achievements\/unlock$/, async (req, res) => {
+  const u = sessionUser(req);
+  if (!u) throw httpError(401, '请先登入怪啖论坛。');
+  const b = await readJSON(req).catch(() => ({}));
+  const id = String(b.id || '');
+  if (ACH_FRONT_UNLOCK.indexOf(id) < 0) throw httpError(400, '该成就无法通过此方式解锁。');
+  const isNew = unlockAchievement(u, id);
+  const def = ACHIEVEMENTS.find(a => a.id === id);
+  sendJSON(res, 200, { ok: true, unlocked: isNew, id, achievement: isNew && def ? { id: def.id, name: def.name, icon: def.icon } : null });
+});
+
+/* 签到：北京时间自然日，连续天数断签归 1 */
+route('POST', /^\/api\/checkin$/, async (req, res) => {
+  const u = sessionUser(req);
+  if (!u) throw httpError(401, '请先登入怪啖论坛。');
+  const today = beijingDay();
+  const c = u.checkin || {};
+  if (c.last === today) throw httpError(400, '今天已经签过了。');
+  const yesterday = beijingDay(Date.now() - 86400000);
+  const streak = c.last === yesterday ? (c.streak || 0) + 1 : 1;
+  u.checkin = { last: today, streak, total: (c.total || 0) + 1 };
+  save();
+  sendJSON(res, 200, { ok: true, checkin: { streak, total: u.checkin.total, todayDone: true } });
 });
 
 route('POST', /^\/api\/register$/, async (req, res) => {
@@ -592,6 +758,8 @@ route('POST', /^\/api\/register$/, async (req, res) => {
   DB.users.push(user);
   save();
   broadcast('user', publicUser(user));
+  /* 自动审核通过时，与管理员手动 approve 保持一致，在聊天室广播入坛系统消息 */
+  if (approved) addMessage('system', { text: '「' + nickname + '」通过审核，加入怪啖论坛。' });
   sendJSON(res, 200, { ok: true, status: user.status, user: publicUser(user) });
 });
 
@@ -735,10 +903,60 @@ route('GET', /^\/api\/users\/([a-z0-9]+)\/public$/, async (req, res, m) => {
   sendJSON(res, 200, publicUser(u));
 });
 
+/* 关注 / 取消关注（新增：关注功能）
+ * 关系存在「我」的用户对象 following:[userId]；只可关注已过审且有主页的角色，不可关注自己。
+ * 新关注时给被关注者推送「XXX 关注了你」；被关注的人发帖时在消息页推送（见 server-forum.js 发帖路由）。 */
+route('POST', /^\/api\/users\/([a-z0-9]+)\/follow$/, async (req, res, m) => {
+  const me = sessionUser(req);
+  if (!me || me.status !== 'approved') throw httpError(403, '请先登入已过审账号。');
+  const target = DB.users.find(x => x.id === m[1] && x.status === 'approved' && !isNoProfileUser(x));
+  if (!target) throw httpError(404, '未找到该用户。');
+  if (target.id === me.id) throw httpError(400, '不能关注自己。');
+  const b = await readJSON(req).catch(() => ({}));
+  const want = b.follow === undefined ? !(me.following || []).includes(target.id) : !!b.follow;
+  const list = Array.isArray(me.following) ? me.following.slice() : [];
+  const at = list.indexOf(target.id);
+  const newlyFollowed = want && at < 0;
+  if (want && at < 0) list.push(target.id);
+  if (!want && at >= 0) list.splice(at, 1);
+  me.following = list;
+  /* 仅首次关注推送一次「XXX 关注了你」；重复关注/取消关注都不再推送。 */
+  if (newlyFollowed) {
+    forum.notify(target.id, 'followUser', { id: me.id, name: me.nickname, role: 'user', avatar: me.avatar }, { profileId: me.id });
+    unlockAchievement(me, 'heart');   // 成就：因你心动
+  }
+  save();
+  sendJSON(res, 200, { ok: true, following: want, id: target.id });
+});
+
+/* 举报（新增）：只给被举报者写一条站内消息，后台不审核、不改用户状态。
+ * 理由限定为页面上的五选一，避免任意文本落库。 */
+const REPORT_REASONS = [
+  '该用户发布广告信息', '该用户可能不是人类', '该用户发布违法信息',
+  '该用户发布不实信息', '没什么纯粹急了'
+];
+route('POST', /^\/api\/users\/([a-z0-9]+)\/report$/, async (req, res, m) => {
+  const me = sessionUser(req);
+  if (!me || me.status !== 'approved') throw httpError(403, '请先登入已过审账号。');
+  const target = DB.users.find(x => x.id === m[1] && x.status === 'approved' && !isNoProfileUser(x));
+  if (!target) throw httpError(404, '未找到该用户。');
+  const b = await readJSON(req).catch(() => ({}));
+  const reason = String(b.reason || '');
+  if (!REPORT_REASONS.includes(reason)) throw httpError(400, '举报理由无效。');
+  forum.notify(target.id, 'reportUser', { id: me.id, name: me.nickname, role: 'user', avatar: me.avatar }, { profileId: me.id, reason });
+  unlockAchievement(me, 'cleaner');   // 成就：净坛使者
+  save();
+  sendJSON(res, 200, { ok: true, reason });
+});
+
 route('GET', /^\/api\/posts$/, async (req, res, m, url) => {
   const all = url.searchParams.get('all') === '1' && isAdmin(req);
   const list = DB.posts.filter(p => all || p.status === 'approved');
-  sendJSON(res, 200, list.slice().reverse().map(publicPost));
+  sendJSON(res, 200, list.slice().reverse().map(p => {
+    const pub = publicPost(p);
+    pub.canEdit = canEditPost(req, p);   // 前端据此显示「编辑档案」（新增：投稿人编辑）
+    return pub;
+  }));
 });
 
 route('POST', /^\/api\/posts$/, async (req, res) => {
@@ -755,8 +973,8 @@ route('POST', /^\/api\/posts$/, async (req, res) => {
   /* 这个名字能对上哪张角色卡，就挂哪张的 id 供点击跳转；无主页角色（匿名 / 档案）不挂 */
   const authorRec = authorText && DB.users.find(x => x.nickname === authorText);
   const authorId = (authorRec && !isNoProfileUser(authorRec)) ? authorRec.id : null;
-  /* 是否公开：公开的同步到「调查委托」，不公开的同步到「怪谈故事」 */
-  const pub = b.public === 'no' ? 'no' : 'yes';
+  /* 投稿统一归入「怪谈故事」，固定标记为不公开存档 */
+  const pub = 'no';
   const owner = text(b.owner, 24, '设主') || u.playerName || '';
   const id = uid();
   /* 免审核：投稿点击即提交，直接归档；不再受后台 autoApprovePosts 开关影响 */
@@ -776,7 +994,7 @@ route('POST', /^\/api\/posts$/, async (req, res) => {
   };
   if (!post.card) throw httpError(400, '卡面导出失败，请重试。');
   DB.posts.push(post);
-  /* 投稿即刻同步一条频道帖子：公开→调查委托，不公开→怪谈故事 */
+  /* 投稿即刻同步一条频道帖子到「怪谈故事」 */
   const thread = syncPostToForum(post);
   save();
   if (approved) addMessage('system', { text: '「' + post.author + '」投稿的新怪谈《' + name + '》通过审核，已放入怪谈档案。' });
@@ -784,27 +1002,143 @@ route('POST', /^\/api\/posts$/, async (req, res) => {
   sendJSON(res, 200, { ok: true, status: post.status, post: publicPost(post), threadId: thread ? thread.id : null });
 });
 
+/* 投稿人编辑自己的怪谈档案（新增：投稿人编辑档案）
+ * 实际投稿账号 submitterId 或档案署名账号 authorId 本人可改；需过审、未禁言。
+ * 可改：名称/影响范围/机制/对策/类型/共享方式。设主、署名、卡面图与打码图一律不动。 */
+route('POST', /^\/api\/posts\/([a-z0-9]+)\/edit$/, async (req, res, m) => {
+  const u = sessionUser(req);
+  if (!u) throw httpError(401, '请先登入怪啖论坛。');
+  if (u.status !== 'approved') throw httpError(403, '账号审核中，通过审核后即可编辑档案。');
+  if (u.banned) throw httpError(403, '账号已被禁封，无法编辑。');
+  const p = DB.posts.find(x => x.id === m[1]);
+  if (!p) throw httpError(404, '未找到该怪谈档案。');
+  if (!canEditPost(req, p)) throw httpError(403, '只有该档案的投稿人本人可以编辑。');
+  const b = await readJSON(req);
+  p.name = requireText(b.name, 60, '怪谈名称');
+  p.area = requireText(b.area, 160, '怪谈影响范围');
+  p.mechanism = text(b.mechanism, 300, '怪谈机制');
+  p.countermeasures = text(b.countermeasures, 300, '怪谈对策');
+  if (b.type === 'puzzle' || b.type === 'combat') p.type = b.type;
+  if (b.sharing === 'yes' || b.sharing === 'no') { p.sharing = b.sharing; p.closed = b.sharing === 'no'; }
+  p.editedAt = Date.now();
+  save();
+  const pub = publicPost(p);
+  broadcast('post', pub);
+  sendJSON(res, 200, { ok: true, post: pub });
+});
+
+/* 投稿人保存自己怪谈档案的黑方块打码坐标（新增：黑方块打码） */
+route('POST', /^\/api\/posts\/([a-z0-9]+)\/masks$/, async (req, res, m) => {
+  const u = sessionUser(req);
+  if (!u) throw httpError(401, '请先登入怪啖论坛。');
+  if (u.status !== 'approved') throw httpError(403, '账号审核中，通过审核后才能编辑档案。');
+  if (u.banned) throw httpError(403, '账号已被禁封，无法编辑。');
+  const p = DB.posts.find(x => x.id === m[1]);
+  if (!p) throw httpError(404, '未找到该怪谈档案。');
+  if (!canEditPost(req, p)) throw httpError(403, '只有该档案的投稿人本人可以编辑。');
+  const b = await readJSON(req);
+  p.masks = normMasks(b.masks);
+  p.editedAt = Date.now();
+  save();
+  const pub = publicPost(p);
+  broadcast('post', pub);
+  sendJSON(res, 200, { ok: true, masks: pub.masks });
+});
+
+/* ---------- 聊天存档（新增：聊天存档功能） ----------
+   config.chatArchives = [{ id, title, cutoffId, count, createdAt }]
+   主聊天室只显示最新存档点之后的新消息，不设条数上限；
+   存档点之前的历史通过 /api/chat/archives 随时查看。 */
+function chatArchives() { return DB.config.chatArchives || []; }
+function latestChatCutoff() { return chatArchives().reduce((mx, a) => Math.max(mx, a.cutoffId || 0), 0); }
+function decorateChatMsg(x, lvCache) {
+  /* 发言人名字按 userId 实时解析网名，改名后旧消息也统一显示；并附带禁言状态 */
+  if (x.kind !== 'chat' || !x.userId) return x;
+  const u = DB.users.find(y => y.id === x.userId);
+  if (!u) return x;
+  const out = Object.assign({}, x);
+  if (u.nickname && u.nickname !== x.nickname) out.nickname = u.nickname;
+  out.muted = isMutedUser(u);
+  out.noProfile = isNoProfileUser(u);
+  /* 等级随消息实时计算（按批次缓存，避免每条消息重算一遍全站帖子） */
+  if (!u.banned) {
+    if (lvCache) {
+      if (!lvCache.has(u.id)) lvCache.set(u.id, userGrowth(u).lv);
+      out.level = lvCache.get(u.id);
+    } else {
+      out.level = userGrowth(u).lv;
+    }
+  }
+  /* 被禁封账号的历史消息统一显示【已清除】+封号头像（新增：禁封功能） */
+  if (u.banned || x.bannedCleared) {
+    out.banned = true;
+    out.bannedCleared = true;
+    out.text = '【已清除】';
+    out.avatar = BANNED_AVATAR;
+    delete out.level;
+  }
+  return out;
+}
+function archiveSummary(a) {
+  /* 每卷只统计「上一卷存档点之后」到本卷存档点之间的消息 */
+  const prev = chatArchives()
+    .filter(x => x.cutoffId < a.cutoffId)
+    .reduce((mx, x) => Math.max(mx, x.cutoffId), 0);
+  const msgs = DB.messages.filter(x => x.id > prev && x.id <= a.cutoffId);
+  const first = msgs[0], last = msgs[msgs.length - 1];
+  return {
+    id: a.id, title: a.title, cutoffId: a.cutoffId, fromId: prev + 1,
+    count: msgs.length,
+    firstId: first ? first.id : prev + 1, lastId: last ? last.id : prev,
+    firstTs: first ? first.ts : a.createdAt, lastTs: last ? last.ts : a.createdAt,
+    createdAt: a.createdAt
+  };
+}
+
 route('GET', /^\/api\/messages$/, async (req, res, m, url) => {
   const after = Number(url.searchParams.get('after') || 0);
-  /* 发言人名字按 userId 实时解析网名，改名后旧消息也统一显示；并附带禁言状态 */
-  const list = (after ? DB.messages.filter(x => x.id > after) : DB.messages.slice(-200)).map(x => {
-    if (x.kind !== 'chat' || !x.userId) return x;
-    const u = DB.users.find(y => y.id === x.userId);
-    if (!u) return x;
-    const out = Object.assign({}, x);
-    if (u.nickname && u.nickname !== x.nickname) out.nickname = u.nickname;
-    out.muted = isMutedUser(u);
-    out.noProfile = isNoProfileUser(u);
-    /* 被禁封账号的历史消息统一显示【已清除】+封号头像（新增：禁封功能） */
-    if (u.banned || x.bannedCleared) {
-      out.banned = true;
-      out.bannedCleared = true;
-      out.text = '【已清除】';
-      out.avatar = BANNED_AVATAR;
-    }
-    return out;
-  });
+  const cutoff = latestChatCutoff();
+  /* 存档点之前的历史请走 /api/chat/archives；存档之后的新消息不再做 200 条截断 */
+  const lvCache = new Map();
+  const list = (after ? DB.messages.filter(x => x.id > after) : DB.messages.filter(x => x.id > cutoff))
+    .map(x => decorateChatMsg(x, lvCache));
   sendJSON(res, 200, list);
+});
+
+/* 存档列表（公开，未登入也可查看） */
+route('GET', /^\/api\/chat\/archives$/, async (req, res) => {
+  sendJSON(res, 200, chatArchives().map(archiveSummary));
+});
+
+/* 存档内容：倒序分页（before 之前往前取 limit 条），返回升序排列 */
+route('GET', /^\/api\/chat\/archives\/(\d+)\/messages$/, async (req, res, m, url) => {
+  const a = chatArchives().find(x => x.id === Number(m[1]));
+  if (!a) throw httpError(404, '未找到该存档。');
+  const before = Number(url.searchParams.get('before') || 0);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 100), 1), 200);
+  const fromId = archiveSummary(a).fromId;
+  const src = DB.messages.filter(x => x.id >= fromId && x.id <= a.cutoffId && (!before || x.id < before));
+  const lvCache = new Map();
+  const list = src.slice(-limit).map(x => decorateChatMsg(x, lvCache));
+  sendJSON(res, 200, { archive: archiveSummary(a), messages: list, hasMore: src.length > list.length });
+});
+
+/* 管理员：把当前全部新消息封存为一个存档 */
+route('POST', /^\/api\/admin\/chat\/archive$/, async (req, res) => {
+  needAdmin(req);
+  const b = await readJSON(req);
+  const rest = DB.messages.filter(x => x.id > latestChatCutoff());
+  if (!rest.length) throw httpError(400, '存档点之后没有新消息，无需新建存档。');
+  const lastId = rest[rest.length - 1].id;
+  const title = b.title ? requireText(b.title, 60, '存档名称')
+    : '聊天室存档 · 第' + (chatArchives().length + 1) + '卷';
+  const a = {
+    id: chatArchives().reduce((mx, x) => Math.max(mx, x.id), 0) + 1,
+    title, cutoffId: lastId, count: rest.length, createdAt: Date.now()
+  };
+  DB.config.chatArchives = chatArchives().concat([a]);
+  save();
+  sendJSON(res, 200, { ok: true, archive: archiveSummary(a) });
 });
 
 route('POST', /^\/api\/messages$/, async (req, res) => {
@@ -818,7 +1152,21 @@ route('POST', /^\/api\/messages$/, async (req, res) => {
   }
   const b = await readJSON(req);
   const body = requireText(b.text, 500, '发言');
-  const msg = addMessage('chat', { userId: u.id, nickname: u.nickname, avatar: u.avatar, text: body });
+  const mentions = forum.mentionMeta(body);
+  const msg = addMessage('chat', { userId: u.id, nickname: u.nickname, avatar: u.avatar, text: body, mentions });
+  forum.notifyChatMentions(msg, { id: u.id, name: u.nickname, role: 'user' });
+  /* 成就（新增）：你好世界 = 首次聊天；刷屏机器 = 自己连续 4 条、中间无他人（系统消息不算） */
+  unlockAchievement(u, 'hello_world');
+  {
+    let run = 0;
+    for (let i = DB.messages.length - 1; i >= 0; i--) {
+      const m = DB.messages[i];
+      if (m.kind !== 'chat') continue;           // 系统消息不打断连续
+      if (m.userId === u.id) { run++; if (run >= 4) break; }
+      else break;                                 // 他人插话，连击中断
+    }
+    if (run >= 4) unlockAchievement(u, 'spam_machine');
+  }
   sendJSON(res, 200, msg);
 });
 
@@ -882,6 +1230,8 @@ route('POST', /^\/api\/emojis$/, async (req, res) => {
     file, createdAt: Date.now(), createdBy: { id: u.id, nickname: u.nickname }
   };
   DB.emojis.push(emoji);
+  /* 成就：表情包大师 = 上传满 5 条表情包 */
+  if ((DB.emojis || []).filter(e => e.createdBy && e.createdBy.id === u.id).length >= 5) unlockAchievement(u, 'emoji_master');
   await save();
   broadcast('emojis', emojiSnapshot());
   sendJSON(res, 200, { ok: true, emoji: { id, groupId: gid, name: emoji.name, url: file }, snapshot: emojiSnapshot() });
@@ -976,6 +1326,7 @@ route('GET', /^\/api\/admin\/overview$/, async (req, res) => {
     users: DB.users.slice().reverse().map(fullUser),
     posts: DB.posts.slice().reverse().map(publicPost),
     messages: DB.messages.slice(-80).reverse(),
+    chatArchives: chatArchives().map(archiveSummary),
     config: {
       adminUser: DB.config.adminUser,
       autoApproveUsers: !!DB.config.autoApproveUsers,
@@ -1125,6 +1476,44 @@ route('POST', /^\/api\/admin\/image$/, async (req, res) => {
   sendJSON(res, 200, { ok: true, url: rec[slot] });
 });
 
+/* 投稿人上传自己档案的卡面 / 形象图（新增：投稿人编辑档案）
+ * 权限同 canEditPost；只认 posts 的 card / portrait，不动署名/设主/打码。
+ * 沿用后台图片逻辑：保留 .orig 原始备份、换扩展名清旧文件、verUrl 破缓存。 */
+route('POST', /^\/api\/posts\/([a-z0-9]+)\/image$/, async (req, res, m) => {
+  const u = sessionUser(req);
+  if (!u) throw httpError(401, '请先登入怪啖论坛。');
+  if (u.status !== 'approved') throw httpError(403, '账号审核中，通过审核后即可编辑档案。');
+  const p = DB.posts.find(x => x.id === m[1]);
+  if (!p) throw httpError(404, '未找到该怪谈档案。');
+  if (!canEditPost(req, p)) throw httpError(403, '只有该档案的投稿人本人可以编辑。');
+  const b = await readJSON(req);
+  const slot = (b.slot === 'card' || b.slot === 'portrait') ? b.slot : null;
+  if (!slot) throw httpError(400, '不支持的图片位置，仅可上传卡面或形象。');
+  const dir = SLOT_DIR.posts[slot];
+  const { buf, ext } = await decodeUpload(b.dataUrl);
+  await fsp.mkdir(path.join(FILES, dir), { recursive: true });
+  const oldUrl = p[slot];
+  if (oldUrl && oldUrl.startsWith('/files/')) {
+    const oldPath = path.join(FILES, fileRel(oldUrl));
+    if (fs.existsSync(oldPath)) {
+      const orig = origPathOf(oldPath);
+      if (!fs.existsSync(orig)) await fsp.copyFile(oldPath, orig);
+    }
+  }
+  for (const e of ['png', 'jpg', 'webp']) {
+    if (e === ext) continue;
+    const old = path.join(FILES, dir, p.id + '.' + e);
+    if (fs.existsSync(old)) { try { await fsp.unlink(old); } catch {} }
+  }
+  const name = p.id + '.' + ext;
+  await fsp.writeFile(path.join(FILES, dir, name), buf);
+  p[slot] = verUrl('/files/' + dir + '/' + name);
+  p.editedAt = Date.now();
+  save();
+  broadcast('post', publicPost(p));
+  sendJSON(res, 200, { ok: true, url: p[slot] });
+});
+
 route('GET', /^\/api\/admin\/image$/, async (req, res, m, url) => {
   needAdmin(req);
   const file = url.searchParams.get('file') || '';
@@ -1147,6 +1536,19 @@ route('POST', /^\/api\/admin\/mask$/, async (req, res) => {
   save();
   broadcast(kind === 'users' ? 'user' : 'post', kind === 'users' ? publicUser(rec) : publicPost(rec));
   sendJSON(res, 200, { ok: true, masked: rec.masked });
+});
+
+/* 管理员保存用户 / 怪谈的黑方块打码坐标（新增：黑方块打码） */
+route('POST', /^\/api\/admin\/masks$/, async (req, res) => {
+  needAdmin(req);
+  const b = await readJSON(req);
+  const kind = b.kind === 'posts' ? 'posts' : 'users';
+  const rec = recordOf(kind, requireText(b.id, 40, '档案'));
+  if (!rec) throw httpError(404, '未找到该档案。');
+  rec.masks = normMasks(b.masks);
+  save();
+  broadcast(kind === 'users' ? 'user' : 'post', kind === 'users' ? publicUser(rec) : publicPost(rec));
+  sendJSON(res, 200, { ok: true, masks: rec.masks || {} });
 });
 
 route('POST', /^\/api\/admin\/users\/([a-z0-9]+)\/edit$/, async (req, res, m) => {
@@ -1212,7 +1614,7 @@ const forum = installForum({
   DB, save, route, broadcast, saveImage, addMessage,
   sessionUser, isAdmin, isAdminRole, isNoProfileUser, needAdmin,
   httpError, sendJSON, readJSON, text, requireText, uid,
-  FILES, path, fs, fsp, getVisits: todayVisits
+  FILES, path, fs, fsp, getVisits: todayVisits, unlockAchievement
 });
 
 /* ---------- root 服务器监控（独立于 admin，页面 site/root.html） ---------- */

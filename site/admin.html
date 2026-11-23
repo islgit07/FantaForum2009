@@ -24,6 +24,7 @@
       <button class="btn" type="button" data-t="users">用户档案审核</button>
       <button class="btn" type="button" data-t="posts">怪谈审核</button>
       <button class="btn" type="button" data-t="messages">聊天管理</button>
+      <button class="btn" type="button" data-t="archives">存档管理</button>
       <button class="btn" type="button" data-t="channels">频道管理</button>
       <button class="btn" type="button" data-t="announce">公告管理</button>
       <button class="btn" type="button" data-t="threads">帖子管理</button>
@@ -112,6 +113,34 @@ function htmlMessages() {
       ' <button class="btn danger" type="button" data-act="messages/' + m.id + '/delete" data-mode="purge" data-confirm="无痕删除？整条消息彻底移除，不可恢复">无痕删除</button></td>' +
       '</tr>').join('') + '</table>';
 }
+/* 存档管理页签：所有聊天存档集中在这里（新增：聊天存档功能） */
+function htmlArchives() {
+  const archs = data.chatArchives || [];
+  return '<div class="profile-section"><h3>已封存的存档</h3>' +
+    (archs.length
+      ? '<table class="table"><tr><th>卷</th><th>存档名称</th><th>消息范围</th><th>条数</th><th>封存时间</th></tr>' +
+        archs.map(a => '<tr><td>第 ' + a.id + ' 卷</td><td>' + FF.esc(a.title) + '</td><td class="hint">#' + a.firstId + ' ~ #' + a.lastId + '</td><td>' + a.count + ' 条</td><td class="hint">' + FF.fmtTime(a.createdAt) + '</td></tr>').join('') + '</table>'
+      : '<p class="hint">还没有存档。</p>') +
+    '<p class="hint" style="margin-top:8px">封存后，聊天室主页只显示存档点之后的新消息（不设条数上限）；旧消息在聊天室顶部的「查看存档」入口随时翻看，各卷互不重复。</p>' +
+    '<div class="profile-section"><h3>封存新存档</h3>' +
+    '<label class="lab">存档名称（选填，留空自动按卷命名）<input class="field" id="arch-title" maxlength="60" placeholder="如：开坛第一夜"></label>' +
+    '<div style="margin-top:10px"><button class="btn primary" type="button" id="arch-new" data-confirm="确定把当前全部新消息封存为一个新存档？封存后聊天室主页将只显示之后的新消息。">把当前消息封存为新存档</button></div></div>';
+}
+function bindArchives() {
+  const btn = document.getElementById('arch-new');
+  if (!btn) return;
+  btn.onclick = async () => {
+    if (btn.dataset.confirm && !confirm(btn.dataset.confirm)) return;
+    statusEl.textContent = '封存中…';
+    try {
+      const title = document.getElementById('arch-title').value.trim();
+      const r = await FF.api('/api/admin/chat/archive', { method: 'POST', body: { title } });
+      statusEl.textContent = '已封存「' + r.archive.title + '」（' + r.archive.count + ' 条）。';
+      document.getElementById('arch-title').value = '';
+      await refresh();
+    } catch (err) { statusEl.textContent = err.message; }
+  };
+}
 function htmlChannels() {
   const list = (data.channels || []).map(c =>
     '<tr><td>' + FF.esc(c.name) + '</td><td>' + FF.esc(c.desc || '') + '</td><td>' + (c.count || 0) + ' 篇</td><td>' + FF.fmtTime(c.createdAt) + '</td></tr>').join('');
@@ -162,14 +191,15 @@ function htmlSystem() {
 
 function render() {
   document.getElementById('tab-title').textContent =
-    { overview: '概览', users: '用户档案审核', posts: '怪谈审核', messages: '聊天管理', channels: '频道管理', announce: '公告管理', threads: '帖子管理', system: '系统设置' }[tab];
+    { overview: '概览', users: '用户档案审核', posts: '怪谈审核', messages: '聊天管理', archives: '存档管理', channels: '频道管理', announce: '公告管理', threads: '帖子管理', system: '系统设置' }[tab];
   panel.innerHTML = !data ? '<p class="hint">读取中…</p>' :
     tab === 'overview' ? htmlOverview() : tab === 'users' ? htmlUsers() : tab === 'posts' ? htmlPosts() :
-    tab === 'messages' ? htmlMessages() : tab === 'channels' ? htmlChannels() : tab === 'announce' ? htmlAnnounce() :
+    tab === 'messages' ? htmlMessages() : tab === 'archives' ? htmlArchives() : tab === 'channels' ? htmlChannels() : tab === 'announce' ? htmlAnnounce() :
     tab === 'threads' ? htmlThreads() : htmlSystem();
   if (tab === 'system') bindSystem();
   if (tab === 'channels') bindChannels();
   if (tab === 'announce') bindAnnounce();
+  if (tab === 'archives') bindArchives();
 }
 function bindSystem() {
   document.getElementById('cfg-save').onclick = async () => {
@@ -292,11 +322,18 @@ function openUserEdit(u) {
       '<div class="pf-upload-item"><div class="pf-upload-label">头像</div>' +
         '<button type="button" class="pf-upload-box" id="eu-up-avatar-box"><img id="eu-up-avatar-img" src="' + FF.esc(u.avatar || '') + '"' + (u.avatar ? '' : ' hidden') + ' alt="头像预览"><span>点击更换头像</span></button>' +
         '<input type="file" id="eu-up-avatar-file" accept="image/png,image/jpeg,image/webp" hidden>' +
-        '<div class="pf-upload-tip">点击图片选择文件</div></div>' +
+        '<div class="pf-upload-tip">点击图片选择文件</div>' +
+        '<button class="btn ghost pf-mask-btn" type="button" data-mask="avatar">黑方块打码</button></div>' +
       '<div class="pf-upload-item"><div class="pf-upload-label">人设卡</div>' +
         '<button type="button" class="pf-upload-box card" id="eu-up-card-box"><img id="eu-up-card-img" src="' + FF.esc(u.card || '') + '"' + (u.card ? '' : ' hidden') + ' alt="设卡预览"><span>点击上传人设卡</span></button>' +
         '<input type="file" id="eu-up-card-file" accept="image/png,image/jpeg,image/webp" hidden>' +
-        '<div class="pf-upload-tip">制卡工具导出 PNG 后上传</div></div>' +
+        '<div class="pf-upload-tip">制卡工具导出 PNG 后上传</div>' +
+        '<button class="btn ghost pf-mask-btn" type="button" data-mask="card">黑方块打码</button></div>' +
+      '<div class="pf-upload-item"><div class="pf-upload-label">人物形象 / 立绘</div>' +
+        '<button type="button" class="pf-upload-box card" id="eu-up-portrait-box"><img id="eu-up-portrait-img" src="' + FF.esc(u.portrait || '') + '"' + (u.portrait ? '' : ' hidden') + ' alt="形象预览"><span>点击上传形象</span></button>' +
+        '<input type="file" id="eu-up-portrait-file" accept="image/png,image/jpeg,image/webp" hidden>' +
+        '<div class="pf-upload-tip">个人主页「个人形象」处显示</div>' +
+        '<button class="btn ghost pf-mask-btn" type="button" data-mask="portrait">黑方块打码</button></div>' +
     '</div>' +
     '<label class="lab">公开性别<input class="field" id="eu-gender" maxlength="12" value="' + FF.esc(p.gender || '') + '"></label>' +
     '<label class="lab">公开年龄<input class="field" id="eu-age" maxlength="4" value="' + FF.esc(p.age || '') + '"></label>' +
@@ -312,14 +349,15 @@ function openUserEdit(u) {
     '<p class="status" id="eu-status" role="status"></p>', true);
   const g = id => back.querySelector('#' + id).value;
   const status = () => back.querySelector('#eu-status');
-  const staged = { avatar: null, card: null };
+  const staged = { avatar: null, card: null, portrait: null };
+  const stagedMasks = { avatar: null, card: null, portrait: null };
   function bindUpload(slot, boxId, fileId, imgId, maxEdge) {
     const box = back.querySelector('#' + boxId), file = back.querySelector('#' + fileId);
     const img = back.querySelector('#' + imgId);
     box.onclick = () => file.click();
     file.onchange = async () => {
       if (!file.files[0]) return;
-      status.textContent = '正在读取' + (slot === 'avatar' ? '头像' : '人设卡') + '…';
+      status.textContent = '正在读取' + ({ avatar: '头像', card: '人设卡', portrait: '人物形象' }[slot] || '图片') + '…';
       try {
         const dataUrl = await readImage(file.files[0], maxEdge);
         staged[slot] = dataUrl;
@@ -331,6 +369,17 @@ function openUserEdit(u) {
   }
   bindUpload('avatar', 'eu-up-avatar-box', 'eu-up-avatar-file', 'eu-up-avatar-img', 1024);
   bindUpload('card', 'eu-up-card-box', 'eu-up-card-file', 'eu-up-card-img', 4800);
+  bindUpload('portrait', 'eu-up-portrait-box', 'eu-up-portrait-file', 'eu-up-portrait-img', 2048);
+  back.querySelectorAll('[data-mask]').forEach(btn => btn.onclick = () => {
+    const slot = btn.dataset.mask, img = back.querySelector('#eu-up-' + slot + '-img');
+    const src = staged[slot] || (img.hidden ? null : img.src);
+    if (!src) { status.textContent = '请先上传图片，再打码。'; return; }
+    const current = stagedMasks[slot] || (u.masks && u.masks[slot]) || [];
+    FF.openBlackMask(src, ({ avatar: '头像', card: '人设卡', portrait: '人物形象' }[slot] || '图片'), current, boxes => {
+      stagedMasks[slot] = boxes;
+      status.textContent = '已设置 ' + boxes.length + ' 块黑方块，点「保存」生效（原图不动）。';
+    });
+  });
   back.querySelector('#eu-save').onclick = async () => {
     const btn = back.querySelector('#eu-save');
     btn.disabled = true;
@@ -342,10 +391,17 @@ function openUserEdit(u) {
         public: { gender: g('eu-gender'), age: g('eu-age'), signature: g('eu-signature'), intro: g('eu-intro') },
         archive: { realName: g('eu-realName'), realGender: g('eu-realGender'), realAge: g('eu-realAge'), species: g('eu-species'), height: g('eu-height'), history: g('eu-history') }
       } });
-      for (const slot of ['avatar', 'card']) {
+      for (const slot of ['avatar', 'card', 'portrait']) {
         if (staged[slot]) await FF.api('/api/admin/image', { body: { kind: 'users', id: u.id, slot, dataUrl: staged[slot] } });
       }
-      staged.avatar = staged.card = null;
+      if (stagedMasks.avatar !== null || stagedMasks.card !== null || stagedMasks.portrait !== null) {
+        await FF.api('/api/admin/masks', { body: { kind: 'users', id: u.id, masks: {
+          avatar: stagedMasks.avatar !== null ? stagedMasks.avatar : (u.masks && u.masks.avatar) || [],
+          card: stagedMasks.card !== null ? stagedMasks.card : (u.masks && u.masks.card) || [],
+          portrait: stagedMasks.portrait !== null ? stagedMasks.portrait : (u.masks && u.masks.portrait) || []
+        } } });
+      }
+      staged.avatar = staged.card = staged.portrait = null;
       status.textContent = '已保存。';
       await refresh();
       back.remove();
@@ -360,11 +416,13 @@ function openPostEdit(p) {
       '<div class="pf-upload-item"><div class="pf-upload-label">怪谈卡面</div>' +
         '<button type="button" class="pf-upload-box card" id="ep-up-card-box"><img id="ep-up-card-img" src="' + FF.esc(p.card || '') + '"' + (p.card ? '' : ' hidden') + ' alt="卡面预览"><span>点击上传卡面</span></button>' +
         '<input type="file" id="ep-up-card-file" accept="image/png,image/jpeg,image/webp" hidden>' +
-        '<div class="pf-upload-tip">制卡工具导出 PNG 后上传</div></div>' +
+        '<div class="pf-upload-tip">制卡工具导出 PNG 后上传</div>' +
+        '<button class="btn ghost pf-mask-btn" type="button" data-mask="card">黑方块打码</button></div>' +
       '<div class="pf-upload-item"><div class="pf-upload-label">形象 / 立绘</div>' +
         '<button type="button" class="pf-upload-box" id="ep-up-portrait-box"><img id="ep-up-portrait-img" src="' + FF.esc(p.portrait || '') + '"' + (p.portrait ? '' : ' hidden') + ' alt="形象预览"><span>点击上传形象</span></button>' +
         '<input type="file" id="ep-up-portrait-file" accept="image/png,image/jpeg,image/webp" hidden>' +
-        '<div class="pf-upload-tip">点击图片选择文件</div></div>' +
+        '<div class="pf-upload-tip">点击图片选择文件</div>' +
+        '<button class="btn ghost pf-mask-btn" type="button" data-mask="portrait">黑方块打码</button></div>' +
     '</div>' +
     '<label class="lab">怪谈名称<input class="field" id="ep-name" maxlength="60" value="' + FF.esc(p.name) + '"></label>' +
     '<label class="lab">类型<select class="field" id="ep-type"><option value="combat"' + (p.type === 'combat' ? ' selected' : '') + '>【战斗】</option><option value="puzzle"' + (p.type === 'puzzle' ? ' selected' : '') + '>【谜题】</option></select></label>' +
@@ -381,6 +439,7 @@ function openPostEdit(p) {
   const g = id => back.querySelector('#' + id).value;
   const status = () => back.querySelector('#ep-status');
   const staged = { card: null, portrait: null };
+  const stagedMasks = { card: null, portrait: null };
   function bindUpload(slot, boxId, fileId, imgId, label, maxEdge) {
     const box = back.querySelector('#' + boxId), file = back.querySelector('#' + fileId);
     const img = back.querySelector('#' + imgId);
@@ -399,6 +458,16 @@ function openPostEdit(p) {
   }
   bindUpload('card', 'ep-up-card-box', 'ep-up-card-file', 'ep-up-card-img', '卡面', 4800);
   bindUpload('portrait', 'ep-up-portrait-box', 'ep-up-portrait-file', 'ep-up-portrait-img', '形象', 2048);
+  back.querySelectorAll('[data-mask]').forEach(btn => btn.onclick = () => {
+    const slot = btn.dataset.mask, img = back.querySelector('#ep-up-' + slot + '-img');
+    const src = staged[slot] || (img.hidden ? null : img.src);
+    if (!src) { status.textContent = '请先上传图片，再打码。'; return; }
+    const current = stagedMasks[slot] || (p.masks && p.masks[slot]) || [];
+    FF.openBlackMask(src, slot === 'card' ? '怪谈卡面' : '形象 / 立绘', current, boxes => {
+      stagedMasks[slot] = boxes;
+      status.textContent = '已设置 ' + boxes.length + ' 块黑方块，点「保存」生效（原图不动）。';
+    });
+  });
   back.querySelector('#ep-save').onclick = async () => {
     const btn = back.querySelector('#ep-save');
     btn.disabled = true;
@@ -407,6 +476,12 @@ function openPostEdit(p) {
       await FF.api('/api/admin/posts/' + p.id + '/edit', { body: { name: g('ep-name'), type: g('ep-type'), area: g('ep-area'), mechanism: g('ep-mechanism'), countermeasures: g('ep-counter'), sharing: g('ep-sharing'), authorId: g('ep-author') || null, owner: g('ep-owner') } });
       for (const slot of ['card', 'portrait']) {
         if (staged[slot]) await FF.api('/api/admin/image', { body: { kind: 'posts', id: p.id, slot, dataUrl: staged[slot] } });
+      }
+      if (stagedMasks.card !== null || stagedMasks.portrait !== null) {
+        await FF.api('/api/admin/masks', { body: { kind: 'posts', id: p.id, masks: {
+          card: stagedMasks.card !== null ? stagedMasks.card : (p.masks && p.masks.card) || [],
+          portrait: stagedMasks.portrait !== null ? stagedMasks.portrait : (p.masks && p.masks.portrait) || []
+        } } });
       }
       staged.card = staged.portrait = null;
       status.textContent = '已保存。';
