@@ -323,7 +323,7 @@ function renderGrowth(u) {
       '<span class="grow-score">' + lv.score + (lv.nextScore != null ? ' / ' + lv.nextScore : ' · 满') + '</span>' +
       '<button class="ach-btn" type="button" id="ach-btn">成就 ' + achCount(u) + '/' + achDefs.length + '</button>' +
     '</div>' +
-    '<div class="grow-stats">发帖 <b>' + (s.threads || 0) + '</b>　获赞 <b>' + (s.likes || 0) + '</b>　档案 <b>' + (s.archives || 0) + '</b></div>';
+    '<div class="grow-stats">发帖 <b>' + (s.threads || 0) + '</b>　获赞 <b>' + (s.likes || 0) + '</b>　档案 <b>' + (s.archives || 0) + '</b>　发言 <b>' + (s.chat || 0) + '</b></div>';
   $('ach-btn').onclick = () => openAchPanel(u);
 }
 function isSelf(u) {

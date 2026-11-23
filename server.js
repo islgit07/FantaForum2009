@@ -203,9 +203,11 @@ const LEVEL_TITLES = [
 function beijingDay(ts) {
   return new Date((ts || Date.now()) + 8 * 3600 * 1000).toISOString().slice(0, 10);
 }
+/* 聊天室每发言一条获得的经验（改这个数就能调整发言的权重） */
+const XP_PER_MSG = 1;
 function userGrowth(u) {
   const uid = u && u.id;
-  let threads = 0, likes = 0, archives = 0;
+  let threads = 0, likes = 0, archives = 0, chat = 0;
   if (uid) {
     /* 帖子维度：只统计本人发布的主题（发帖数 + 主题获赞）
        回复维度：遍历全部未删除主题，凡本人回复不论主题作者是谁都计入获赞
@@ -219,9 +221,13 @@ function userGrowth(u) {
       for (const r of (t.replies || [])) if (!r.deleted && r.authorId === uid) likes += (r.likes || []).length;
     }
     for (const p of (DB.posts || [])) if (p.status === 'approved' && (p.submitterId === uid || p.authorId === uid)) archives++;
+    /* 聊天室发言：只算 chat 类、未被管理员带痕删除的消息（系统消息不计） */
+    for (const m of (DB.messages || [])) {
+      if (m.kind === 'chat' && m.userId === uid && !m.adminDeleted) chat++;
+    }
   }
-  /* 发帖 ×10 + 获赞 ×3 + 档案 ×20 */
-  const score = threads * 10 + likes * 3 + archives * 20;
+  /* 发帖 ×10 + 获赞 ×3 + 档案 ×20 + 发言 ×XP_PER_MSG */
+  const score = threads * 10 + likes * 3 + archives * 20 + chat * XP_PER_MSG;
   let idx = 0;
   for (let i = 0; i < LEVEL_TITLES.length; i++) if (score >= LEVEL_TITLES[i].min) idx = i;
   const cur = LEVEL_TITLES[idx], next = LEVEL_TITLES[idx + 1] || null;
@@ -229,7 +235,7 @@ function userGrowth(u) {
     lv: idx + 1, title: cur.title, score,
     nextScore: next ? next.min : null,
     percent: next ? Math.min(100, Math.round((score - cur.min) / (next.min - cur.min) * 100)) : 100,
-    stats: { threads, likes, archives }
+    stats: { threads, likes, archives, chat }
   };
 }
 function unlockAchievement(u, id) {
