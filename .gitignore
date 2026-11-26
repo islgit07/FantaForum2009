@@ -31,3 +31,8 @@ Thumbs.db
 *.tmp
 _last_backup.txt
 srv_md5.txt
+
+# 跑团站：玩家头像副本 / 本地备份目录（不入库）
+qq-paotuan/avatars/
+qq-paotuan/.backup-pre-1d6/
+qq-paotuan/.preview-*.png
